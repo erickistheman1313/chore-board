@@ -445,8 +445,9 @@ function choreRow(c, m, ds, live){
   });
   function commit(nowOn, photo){
     setDone(ds, m.id, c, nowOn, photo);
+    tap(nowOn ? 14 : 8);
     var p = progressFor(m.id, shift(startOfWeek(today), choreDow));
-    if(live && p.total > 0 && p.done === p.total) bumpStreak(m.id);
+    if(live && p.total > 0 && p.done === p.total){ bumpStreak(m.id); tap([16,60,16,60,32]); }
     renderChores(); renderHome(); renderChart(); renderMoney(); headline(); syncPips();
     if(live && p.total > 0 && p.done === p.total) toast("All done! " + (streakOf(m.id)>1 ? streakOf(m.id)+" days in a row" : "Go tell Dad"));
   }
@@ -1144,14 +1145,24 @@ var TABS = [
   {id:"set",    label:"Settings",  icon:"gear"}
 ];
 var current = "home";
+var scrollMemory = {};
 function show(id){
+  if(id !== current) scrollMemory[current] = window.scrollY;   /* native apps keep your place */
+  var changed = id !== current;
   current = id;
   TABS.forEach(function(t){
     el("s-" + t.id).classList.toggle("on", t.id === id);
     el("tab-" + t.id).setAttribute("aria-selected", String(t.id === id));
   });
-  window.scrollTo(0, 0);
+  if(changed) tap(8);
+  window.scrollTo(0, scrollMemory[id] || 0);
   headline();
+}
+
+/* Short buzz on interaction. Android and desktop Chrome honour this;
+   iOS Safari has no vibration API, so it is simply a no-op there. */
+function tap(ms){
+  try{ if(navigator.vibrate) navigator.vibrate(ms || 10); }catch(e){}
 }
 function buildTabs(){
   var bar = el("tabs"); bar.innerHTML = "";
@@ -1226,11 +1237,89 @@ setInterval(function(){
   if(dkey(now) !== dkey(today)){ today = now; choreDow = now.getDay(); renderAll(); }
 }, 60000);
 
+/* =============== INSTALLED-APP BEHAVIOUR =============== */
+function installed(){
+  return window.navigator.standalone === true ||
+         (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+}
+var deferredPrompt = null;
+window.addEventListener("beforeinstallprompt", function(e){
+  e.preventDefault();
+  deferredPrompt = e;
+  maybeOfferInstall();
+});
+window.addEventListener("appinstalled", function(){
+  deferredPrompt = null;
+  el("install").classList.remove("on");
+  toast("Installed - open it from your Home Screen");
+});
+
+function maybeOfferInstall(){
+  if(installed() || store.getItem("cs2.noinstall") === "1") return;
+  /* No manifest means nothing to install - e.g. the single-file build. */
+  if(!document.querySelector('link[rel="manifest"]')) return;
+  var iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+            (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  var how = el("installHow"), go = el("installGo");
+  if(deferredPrompt){
+    how.textContent = "Get the full-screen app with its own icon.";
+    go.classList.remove("hide");
+  } else if(iOS){
+    how.innerHTML = "Tap the Share button, then <b>Add to Home Screen</b>. " +
+                    "It opens full screen and works offline.";
+    go.classList.add("hide");
+  } else {
+    return;   /* a desktop browser with no install path - do not nag */
+  }
+  el("install").classList.add("on");
+}
+el("installGo").addEventListener("click", function(){
+  if(!deferredPrompt) return;
+  deferredPrompt.prompt();
+  deferredPrompt.userChoice.then(function(){ deferredPrompt = null; el("install").classList.remove("on"); });
+});
+el("installX").addEventListener("click", function(){
+  store.setItem("cs2.noinstall", "1");
+  el("install").classList.remove("on");
+});
+
+/* Standalone iOS has no browser chrome to absorb a stray swipe; block the
+   two-finger/edge pinch-zoom that otherwise leaves the layout stranded. */
+if(installed()){
+  document.addEventListener("gesturestart", function(e){ e.preventDefault(); });
+}
+
 if(!S.cfg.since){ S.cfg.since = dkey(today); save("cfg"); }
+
+/* Home-screen icon shortcuts arrive as ?tab=chores etc. */
+function requestedTab(){
+  var m = /[?&]tab=([a-z]+)/.exec(location.search);
+  if(!m) return null;
+  return TABS.some(function(t){ return t.id === m[1]; }) ? m[1] : null;
+}
 
 buildTabs();
 if(!S.cfg.me){ firstRun(); }
-else { renderAll(); show("home"); }
+else { renderAll(); show(requestedTab() || "home"); }
+
+/* Hand off from the launch screen after the first paint. rAF is the nice path,
+   but it never fires while the tab is hidden - so a timer races it and whichever
+   lands first wins. The launch screen must never be able to trap the UI. */
+var booted = false;
+function dismissBoot(){
+  if(booted) return;
+  booted = true;
+  var b = el("boot");
+  if(b){
+    b.classList.add("gone");
+    setTimeout(function(){ if(b.parentNode) b.parentNode.removeChild(b); }, 400);
+  }
+  setTimeout(maybeOfferInstall, 1200);
+}
+requestAnimationFrame(function(){ requestAnimationFrame(dismissBoot); });
+setTimeout(dismissBoot, 700);
+window.addEventListener("load", dismissBoot);
+document.addEventListener("visibilitychange", function(){ if(!document.hidden) dismissBoot(); });
 
 if("serviceWorker" in navigator){
   window.addEventListener("load", function(){

@@ -18,9 +18,43 @@
 <link rel="apple-touch-icon" sizes="167x167" href="icons/icon-167.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png">
 <link rel="icon" href="icons/icon-192.png">
+<!-- launch images: iOS shows one only when a media query matches exactly -->
+<link rel="apple-touch-startup-image" href="splash/splash-1125x2436.png" media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="splash/splash-1170x2532.png" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="splash/splash-1179x2556.png" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="splash/splash-1206x2622.png" media="(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="splash/splash-1242x2208.png" media="(device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="splash/splash-1242x2688.png" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="splash/splash-1284x2778.png" media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="splash/splash-1290x2796.png" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="splash/splash-1320x2868.png" media="(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="splash/splash-1536x2048.png" media="(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="splash/splash-1620x2160.png" media="(device-width: 810px) and (device-height: 1080px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="splash/splash-1668x2224.png" media="(device-width: 834px) and (device-height: 1112px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="splash/splash-1668x2388.png" media="(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="splash/splash-2048x2732.png" media="(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="splash/splash-750x1334.png" media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="splash/splash-828x1792.png" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+<!-- /launch images -->
 <link rel="stylesheet" href="app.css">
+<style>
+/* Inline so the launch screen paints before app.css even arrives. */
+#boot{position:fixed;inset:0;z-index:99;display:grid;place-items:center;
+      background:linear-gradient(168deg,#1e4bc0,#122a6e)}
+</style>
 </head>
 <body>
+
+<div id="boot" role="status" aria-label="Loading">
+  <div class="mark">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="#ffc12e" stroke="#14122a" stroke-width="1.6" stroke-linejoin="round"
+            d="M12 2.2l3 6.5 7.1.9-5.3 4.8 1.4 7L12 17.9 5.8 21.4l1.4-7L1.9 9.6l7.1-.9z"/>
+    </svg>
+    <div class="nm">Family Chores</div>
+    <div class="dots"><i></i><i></i><i></i></div>
+  </div>
+</div>
 
 <!-- first launch -->
 <div id="welcome" class="sheet" style="top:0;border-radius:0;max-height:100vh">
@@ -74,6 +108,16 @@
     <button type="button" id="sheetSave" class="strong">Save</button>
   </div>
   <div class="body" id="sheetBody"></div>
+</div>
+
+<div class="install" id="install">
+  <span class="ico"><img src="icons/icon-192.png" alt="" onerror="this.parentNode.style.display='none'"></span>
+  <span style="flex:1;min-width:0">
+    <span class="t">Add Chores to your Home Screen</span>
+    <span class="s" id="installHow"></span>
+    <button class="btn go hide" id="installGo" type="button">Install</button>
+  </span>
+  <button class="x" id="installX" type="button" aria-label="Dismiss">&times;</button>
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
