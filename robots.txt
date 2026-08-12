@@ -1,2 +1,21 @@
+# Link-preview crawlers are allowed so sharing the URL in Messages, WhatsApp
+# or Slack shows the card. They do not index anything.
+User-agent: facebookexternalhit
+Allow: /
+
+User-agent: Twitterbot
+Allow: /
+
+User-agent: Slackbot-LinkExpanding
+Allow: /
+
+User-agent: WhatsApp
+Allow: /
+
+User-agent: Discordbot
+Allow: /
+
+# Everything else stays out. The noindex meta tag in index.html is the real
+# guard against search results; this just keeps crawlers off the pages.
 User-agent: *
 Disallow: /
