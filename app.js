@@ -1200,7 +1200,7 @@ function headline(){
 /* =============== BOOT =============== */
 function renderAll(){
   renderHome(); renderChores(); renderChart(); renderMoney(); renderSettings();
-  headline(); syncPips();
+  buildCatList(); headline(); syncPips();
 }
 
 function firstRun(){
@@ -1298,7 +1298,18 @@ function requestedTab(){
   return TABS.some(function(t){ return t.id === m[1]; }) ? m[1] : null;
 }
 
+/* Category suggestions for the chore editor, derived from the chores that
+   actually exist. Kept out of index.html so the served page carries no names. */
+function buildCatList(){
+  var dl = el("catlist");
+  if(!dl) return;
+  var seen = {}, out = [];
+  S.chores.forEach(function(c){ if(c.cat && !seen[c.cat]){ seen[c.cat] = 1; out.push(c.cat); } });
+  dl.innerHTML = out.map(function(c){ return '<option value="' + esc(c) + '"></option>'; }).join("");
+}
+
 buildTabs();
+buildCatList();
 if(!S.cfg.me){ firstRun(); }
 else { renderAll(); show(requestedTab() || "home"); }
 
