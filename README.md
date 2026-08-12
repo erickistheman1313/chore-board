@@ -64,6 +64,19 @@ rewards, Dad's email, and data reset.
   what was earned, and the streak already written. Press send.
 - **Dark mode**, **offline**, and it all works with no account and no server.
 
+## App behaviour
+
+Installed to the Home Screen it behaves like a native app, not a bookmark:
+
+- **Branded launch screen** instead of a white flash, on every current iPhone and iPad.
+- **No long-press selection or callout menu** outside text fields, and no
+  rubber-band bounce revealing white at the ends of a list.
+- **Haptic feedback** when you check a chore, switch tabs, or hit 100% — on
+  devices that support it. iOS Safari has no vibration API, so iPhones stay silent.
+- **Remembers your place** in each tab, and screens animate in.
+- **Long-press the icon** to jump straight to Chores, Chart or Balances.
+- **Install prompt** if someone opens it in a browser without installing.
+
 ## What it deliberately doesn't do
 
 - **No syncing between devices.** Each phone keeps its own data. Real sync needs
@@ -81,7 +94,13 @@ rewards, Dad's email, and data reset.
 | `sw.js` | Offline support |
 | `manifest.webmanifest` | Makes it installable |
 | `icons/`, `make-icons.ps1` | Home screen icons and the script that draws them |
+| `splash/`, `make-splash.ps1` | iOS launch images and the script that draws them |
+| `insert-splash-tags.js` | Injects the launch-image `<link>` tags into `index.html` (re-runnable) |
 | `build-artifact.js` | Bundles everything into one file for sharing as a Claude artifact |
+
+If you change the launch screen, run `make-splash.ps1` then `node insert-splash-tags.js`.
+iOS only shows a launch image when a media query matches the device *exactly*,
+which is why there are sixteen of them.
 
 Change a file, then:
 
