@@ -1,70 +1,115 @@
 # Family Chore Schedule
 
-The family chore poster, turned into an app you can put on a phone or iPad.
+A chores and allowance tracker for the family, built as a web app you install on
+a phone or iPad. Started life as the family chore poster; now it tracks who owes
+what, what got done, and what everyone's saving toward.
 
 **Live:** https://erickistheman1313.github.io/chore-board/
 
 ## Putting it on an iPhone or iPad
 
-Do this once on each device. It has to be **Safari** — Chrome on iOS can't install apps.
+Once per device, and it has to be **Safari** — Chrome on iOS can't install apps.
 
 1. Open https://erickistheman1313.github.io/chore-board/ in Safari.
-2. Tap the **Share** button (the square with the arrow pointing up).
-3. Scroll down and tap **Add to Home Screen**.
-4. Tap **Add**.
+2. Tap **Share** (the square with the up arrow).
+3. Scroll down, tap **Add to Home Screen**, then **Add**.
 
-You now have a gold star icon on the home screen. Opening it runs full screen with
-no Safari bars, and it works without internet after the first load.
+It opens full screen with no Safari bars and works offline after the first load.
+First launch asks who's using the device; that sticks, so each person installs it
+on their own phone and only sees their own chores.
 
-The first time it opens it asks who you are. That choice sticks, so each person
-installs it on their own device and only ever sees their own chores.
+## The five tabs
 
-## What it does
+**Household** — your progress today, your balance, day streak, and how everyone
+else is doing. Also where the "Tell Dad I'm Done" button lives.
 
-- Reads today's date and shows the right list: daily chores plus whichever chore
-  day you're assigned. Monday Nuno is on Chore B while Isabel is on Chore A,
-  Tuesday it flips, Friday is Family Reset Day for both. Zion gets his four daily jobs.
-- The Monday & Thursday sweep-and-mop tasks only appear on Mondays and Thursdays.
-- **Power Level** bar tracks how far along you are and sticks to the top while scrolling.
-- **Streak** counts days in a row at 100%. Miss a day and it resets.
-- **Tell Dad I'm Done** unlocks at 100% and opens your mail app with the full
-  checklist already written. You press send. (A website can't send mail on its
-  own without a paid server, so this is the honest way to do it.) The **Copy**
-  button next to it copies the same message if a device has no mail app set up.
+**Chores** — today's list, grouped by category, with a day picker so you can look
+at any day of the week. Tap the circle to check off; tap the name for notes,
+steps and photo proof.
 
-Checks save on the device and start fresh each new day.
+**Chart** — the whole week as a grid. Green tick = done, red cross = missed,
+grey dot = wasn't due. Switch between just you and everyone.
+
+**Balances** — everyone's balance, and a full history of every chore that paid
+and every adjustment a parent made. Rewards live here too, with a progress bar
+toward each goal.
+
+**Settings** — who's on this device, parent/kid mode, allowance vs points vs no
+rewards, Dad's email, and data reset.
+
+## Features
+
+- **Profiles** for each family member with their own chores and balance.
+- **Colour-coded chores** with 43 icons to pick from.
+- **Per-person scheduling** — each chore picks which days it's due *per person*,
+  which is how the poster's alternating A/B rotation is represented. Nuno gets
+  Chore B on Mon/Wed and Chore A on Tue/Thu; Isabel is the opposite; Friday is
+  Family Reset Day for both. The Monday & Thursday sweep-and-mop tasks only
+  appear on those days.
+- **Allowance or points** — each chore is worth something; completing it credits
+  the balance automatically, unchecking reverses it. Or turn rewards off entirely.
+- **Manual adjustments** — a parent can add or deduct any amount with a reason,
+  for cash paid out or a bonus. Every change is timestamped in the history.
+- **Rewards** with progress bars, either for one person or joint across everyone.
+- **Photo proof** — turn it on for a chore and it can't be checked off without a
+  photo. Photos are downscaled to 420px and kept on the device.
+- **Subtasks** — break a chore into steps, tick them off individually.
+- **Notes** on any chore.
+- **Streaks** — days in a row at 100%. Miss a day and it resets. You can't farm
+  it by checking off a different day's list.
+- **Parent / kid mode** — kid devices can check off chores and look at balances
+  but can't edit chores or change money. Optional 4-digit PIN stops them
+  switching back.
+- **Email to Dad** — unlocks at 100% and opens the mail app with the checklist,
+  what was earned, and the streak already written. Press send.
+- **Dark mode**, **offline**, and it all works with no account and no server.
+
+## What it deliberately doesn't do
+
+- **No syncing between devices.** Each phone keeps its own data. Real sync needs
+  a server and a monthly bill; everything here is free and self-contained.
+- **No home screen widgets.** Those are iOS-native only and need Xcode plus a
+  paid Apple developer account.
 
 ## Editing it
 
-`index.html` is the whole app — HTML, CSS and JavaScript in one file. Edit it,
-then:
+| File | What it is |
+| --- | --- |
+| `index.html` | Page shell and `<head>` |
+| `app.css` | All styling |
+| `app.js` | All logic — data model, screens, editors |
+| `sw.js` | Offline support |
+| `manifest.webmanifest` | Makes it installable |
+| `icons/`, `make-icons.ps1` | Home screen icons and the script that draws them |
+| `build-artifact.js` | Bundles everything into one file for sharing as a Claude artifact |
+
+Change a file, then:
 
 ```bash
 cd "C:\Users\Nuno\Documents\chore-app" && git add -A && git commit -m "update" && git push
 ```
 
-GitHub Pages redeploys in about a minute. Phones pick up the change next time
-they're opened with signal.
+Pages redeploys in about a minute. `sw.js` serves HTML, CSS and JS network-first,
+so phones pick up changes on next open — you don't have to bump the cache version
+for code changes (do bump `CACHE` if you change the icon list).
 
-**If you change the chore lists,** bump `CACHE` in `sw.js` (`chores-v1` → `chores-v2`)
-so already-installed phones fetch the new version instead of the cached one.
+**Keep the source files plain ASCII.** They're inlined into a single file for the
+artifact build, and stray encoding breaks it. `build-artifact.js` verifies the
+inlined copy matches byte-for-byte and will fail loudly if it doesn't.
 
-### Other files
+**Don't edit these files with PowerShell text round-trips** (`Get-Content` piped
+to `Set-Content`) — on Windows PowerShell 5.1 that adds a BOM and double-encodes
+anything non-ASCII, which silently breaks the artifact build.
 
-| File | What it's for |
-| --- | --- |
-| `manifest.webmanifest` | Makes it installable; sets the name and icon |
-| `sw.js` | Offline support |
-| `icons/` | Home screen icons |
-| `make-icons.ps1` | Regenerates the icons if you want a different design |
-| `build-artifact.js` | Builds the single-file version for sharing as a Claude artifact |
-| `robots.txt` | Keeps search engines from listing the page |
+## Restoring the original chore list
 
-## A note on privacy
+Settings → **Reset chores to the family poster**. Check-offs and balances are kept.
 
-The page is on a public URL, so anyone with the link can open it. It has first
-names and ages on it. `robots.txt` and a `noindex` tag keep it out of Google, so
-it won't turn up in searches — but don't post the link anywhere public.
+## Privacy
 
-Nothing is ever uploaded. Checks, streaks and Dad's email address stay in the
-browser's local storage on each device.
+The page is on a public URL, so anyone with the link can open it, and it has
+first names and ages on it. `robots.txt` and a `noindex` tag keep it out of
+search results — but don't post the link publicly.
+
+Nothing is uploaded. Chores, check-offs, balances, photos and Dad's email address
+all stay in local storage on each device.

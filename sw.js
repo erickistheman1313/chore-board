@@ -1,8 +1,10 @@
 /* Offline support. Bump CACHE when you change any file so phones pick up the new version. */
-var CACHE = "chores-v1";
+var CACHE = "chores-v2";
 var ASSETS = [
   "./",
   "./index.html",
+  "./app.css",
+  "./app.js",
   "./manifest.webmanifest",
   "./icons/icon-152.png",
   "./icons/icon-167.png",
@@ -25,11 +27,13 @@ self.addEventListener("activate", function(e){
   );
 });
 
-/* Network first for the page so a redeploy reaches the kids' phones,
-   cache first for icons, and always a cached fallback when there's no signal. */
+/* Network first for anything that carries logic -- page, styles, script -- so a
+   redeploy reaches the kids' phones even if CACHE above wasn't bumped.
+   Cache first for icons, which never change. Cached copy is the offline fallback. */
 self.addEventListener("fetch", function(e){
   if(e.request.method !== "GET") return;
-  var isPage = e.request.mode === "navigate" || /\.(html|webmanifest)$/.test(new URL(e.request.url).pathname);
+  var isPage = e.request.mode === "navigate" ||
+               /\.(html|webmanifest|js|css)$/.test(new URL(e.request.url).pathname);
 
   if(isPage){
     e.respondWith(
