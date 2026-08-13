@@ -74,11 +74,11 @@
   <div class="sbar" style="border-radius:0"><h2>Who's using this device?</h2></div>
   <div class="body">
     <p style="margin:0;color:var(--text-2);font-size:14.5px;text-align:center">
-      Pick your name. It's remembered, so you'll only ever see your own chores.
+      Pick your name, then choose a PIN. You'll only ever see your own chores.
     </p>
     <div class="group" id="pickWho"></div>
     <p style="margin:0;color:var(--text-3);font-size:12.5px;text-align:center">
-      A parent can turn on Parent mode later in Settings to edit chores and balances.
+      A parent can turn on Parent mode later in Settings to edit chores or reset a forgotten PIN.
     </p>
   </div>
 </div>
@@ -97,7 +97,6 @@
     <section class="screen on" id="s-home"  role="tabpanel" aria-label="Household"></section>
     <section class="screen"    id="s-chores" role="tabpanel" aria-label="Chores"></section>
     <section class="screen"    id="s-chart"  role="tabpanel" aria-label="Chart"></section>
-    <section class="screen"    id="s-money"  role="tabpanel" aria-label="Balances"></section>
     <section class="screen"    id="s-set"    role="tabpanel" aria-label="Settings"></section>
   </div>
 
@@ -126,6 +125,31 @@
     <button class="btn go hide" id="installGo" type="button">Install</button>
   </span>
   <button class="x" id="installX" type="button" aria-label="Dismiss">&times;</button>
+</div>
+
+<div class="lock" id="lock" role="dialog" aria-modal="true" aria-label="Enter your PIN">
+  <div class="lockbox" id="lockBox">
+    <span class="av lg" id="lockAv"></span>
+    <div class="who" id="lockName">--</div>
+    <h2 id="lockTitle">Enter your PIN</h2>
+    <div class="dots" id="lockDots" aria-hidden="true"></div>
+    <p class="hint" id="lockHint"></p>
+    <div class="keys">
+      <button type="button" id="key1">1</button>
+      <button type="button" id="key2">2</button>
+      <button type="button" id="key3">3</button>
+      <button type="button" id="key4">4</button>
+      <button type="button" id="key5">5</button>
+      <button type="button" id="key6">6</button>
+      <button type="button" id="key7">7</button>
+      <button type="button" id="key8">8</button>
+      <button type="button" id="key9">9</button>
+      <span></span>
+      <button type="button" id="key0">0</button>
+      <button type="button" id="lockDel" aria-label="Delete">&#9003;</button>
+    </div>
+    <button type="button" class="switch" id="lockSwitch">Not you? Switch person</button>
+  </div>
 </div>
 
 <div class="seal" id="seal" aria-hidden="true"></div>

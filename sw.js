@@ -1,5 +1,5 @@
 /* Offline support. Bump CACHE when you change any file so phones pick up the new version. */
-var CACHE = "chores-v2";
+var CACHE = "chores-v3";
 var ASSETS = [
   "./",
   "./index.html",

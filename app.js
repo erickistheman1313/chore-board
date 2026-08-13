@@ -198,34 +198,27 @@ var S = {
   members: read("cs2.members", null) || SEED_MEMBERS,
   chores:  read("cs2.chores",  null) || seedChores(),
   done:    read("cs2.done",    {}),
-  bal:     read("cs2.bal",     {}),
-  rewards: read("cs2.rewards", [{id:"r1", title:"Pizza night", price:40, who:"joint"}]),
   photos:  read("cs2.photos",  {}),
   streak:  read("cs2.streak",  {}),
-  cfg:     read("cs2.cfg",     {mode:"allowance", cur:"$", dad:"", role:"admin", me:null, pin:""})
+  pins:    read("cs2.pins",    {}),
+  cfg:     read("cs2.cfg",     {dad:"", role:"kid", me:null, parentPin:""})
 };
 function save(what){
   if(!what || what==="members") write("cs2.members", S.members);
   if(!what || what==="chores")  write("cs2.chores",  S.chores);
   if(!what || what==="done")    write("cs2.done",    S.done);
-  if(!what || what==="bal")     write("cs2.bal",     S.bal);
-  if(!what || what==="rewards") write("cs2.rewards", S.rewards);
   if(!what || what==="photos")  write("cs2.photos",  S.photos);
   if(!what || what==="streak")  write("cs2.streak",  S.streak);
+  if(!what || what==="pins")    write("cs2.pins",    S.pins);
   if(!what || what==="cfg")     write("cs2.cfg",     S.cfg);
 }
 
-/* =============== DATES & MONEY =============== */
+/* =============== DATES =============== */
 var today = new Date();
 function dkey(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
 function shift(d, n){ var x = new Date(d.getTime()); x.setDate(x.getDate()+n); return x; }
 function startOfWeek(d){ return shift(d, -d.getDay()); }
 function sameDay(a,b){ return dkey(a) === dkey(b); }
-function money(v){
-  if(S.cfg.mode === "none") return "";
-  if(S.cfg.mode === "points") return Math.round(v*10)/10 + (Math.abs(v)===1 ? " pt" : " pts");
-  return S.cfg.cur + Number(v).toFixed(2);
-}
 function memberById(id){ for(var i=0;i<S.members.length;i++) if(S.members[i].id===id) return S.members[i]; return null; }
 function me(){ return memberById(S.cfg.me) || S.members[0]; }
 function isAdmin(){ return S.cfg.role === "admin"; }
@@ -248,7 +241,7 @@ function isDone(dateStr, mid, cid){
   return !!(day && day[doneKey(mid, cid)]);
 }
 
-/* =============== COMPLETION + BALANCE =============== */
+/* =============== COMPLETION =============== */
 function setDone(dateStr, mid, chore, on, photo){
   if(!S.done[dateStr]) S.done[dateStr] = {};
   var k = doneKey(mid, chore.id);
@@ -257,23 +250,42 @@ function setDone(dateStr, mid, chore, on, photo){
   if(on){
     S.done[dateStr][k] = {at: Date.now()};
     if(photo){ S.photos[dateStr+"|"+k] = photo; save("photos"); }
-    credit(mid, chore.value, chore.title);
   } else {
     delete S.done[dateStr][k];
     if(S.photos[dateStr+"|"+k]){ delete S.photos[dateStr+"|"+k]; save("photos"); }
-    credit(mid, -chore.value, "Undid: " + chore.title);
   }
   save("done");
 }
-function credit(mid, delta, label){
-  if(S.cfg.mode === "none" || !delta) return;
-  var b = S.bal[mid] || (S.bal[mid] = {v:0, hist:[]});
-  b.v = Math.round((b.v + delta) * 100) / 100;
-  b.hist.unshift({at: Date.now(), label: label, d: delta, after: b.v});
-  if(b.hist.length > 400) b.hist.length = 400;
-  save("bal");
+
+/* =============== PIN =============== *
+   A four-digit PIN keeps a sibling from opening someone else's list. It is a
+   soft lock, not security: only ten thousand combinations exist and everything
+   lives in this browser's storage, so anyone determined can get past it. The
+   stored value is hashed so the raw digits are not sitting in plain view.
+   Parent mode can always reset a forgotten PIN, so nobody gets locked out. */
+function pinHash(mid, pin){
+  var salt = "chore-board:" + mid + ":";
+  if(!(window.crypto && crypto.subtle && crypto.subtle.digest)){
+    return Promise.resolve("plain:" + pin);      /* very old browser */
+  }
+  var bytes = new TextEncoder().encode(salt + pin);
+  return crypto.subtle.digest("SHA-256", bytes).then(function(buf){
+    var out = "", view = new Uint8Array(buf);
+    for(var i=0;i<view.length;i++) out += view[i].toString(16).padStart(2,"0");
+    return out;
+  });
 }
-function balanceOf(mid){ return (S.bal[mid] && S.bal[mid].v) || 0; }
+function hasPin(mid){ return !!S.pins[mid]; }
+function setPin(mid, pin){
+  return pinHash(mid, pin).then(function(hash){
+    S.pins[mid] = hash;
+    save("pins");
+  });
+}
+function checkPin(mid, pin){
+  return pinHash(mid, pin).then(function(hash){ return S.pins[mid] === hash; });
+}
+function clearPin(mid){ delete S.pins[mid]; save("pins"); }
 
 /* =============== STREAKS =============== */
 function progressFor(mid, date){
@@ -335,6 +347,132 @@ function toast(msg){
   clearTimeout(toastT); toastT = setTimeout(function(){ t.classList.remove("show"); }, 2600);
 }
 
+/* =============== LOCK SCREEN =============== */
+var pad = {
+  entry: "",          /* digits typed so far */
+  stage: "",          /* enter | create | confirm */
+  member: null,
+  firstTry: "",       /* while creating, the first of the two entries */
+  msg: "",            /* error text, shown until the next keypress */
+  onDone: null
+};
+
+function padOpen(member, stage, onDone){
+  pad.entry = ""; pad.stage = stage; pad.member = member;
+  pad.firstTry = ""; pad.msg = ""; pad.onDone = onDone;
+  el("lock").classList.add("on");
+  document.body.style.overflow = "hidden";
+  padPaint();
+}
+function padClose(){
+  el("lock").classList.remove("on");
+  document.body.style.overflow = "";
+  pad.onDone = null;
+}
+function padTitle(){
+  if(pad.stage === "create")  return "Choose a PIN";
+  if(pad.stage === "confirm") return "Enter it again";
+  return "Enter your PIN";
+}
+function padHint(){
+  if(pad.msg) return pad.msg;          /* an error outranks the stage hint */
+  if(pad.stage === "create")  return "Four digits. You will need this every time you open the app.";
+  if(pad.stage === "confirm") return "Just to be sure you will remember it.";
+  return "";
+}
+function padPaint(){
+  var m = pad.member;
+  el("lockAv").innerHTML = avatar(m.face);
+  el("lockName").textContent = m.name;
+  el("lockTitle").textContent = padTitle();
+  el("lockHint").textContent = padHint();
+  var dots = el("lockDots");
+  dots.innerHTML = "";
+  for(var i=0;i<4;i++){
+    dots.appendChild(h("i", i < pad.entry.length ? "on" : null));
+  }
+  el("lockSwitch").classList.toggle("hide", pad.stage !== "enter" || S.members.length < 2);
+}
+function padShake(msg){
+  var box = el("lockBox");
+  box.classList.remove("shake");
+  void box.offsetWidth;
+  box.classList.add("shake");
+  tap([28, 70, 28]);
+  pad.msg = msg || "";               /* stays up until they press a key */
+  pad.entry = "";
+  setTimeout(padPaint, 340);
+}
+function padPress(d){
+  if(pad.entry.length >= 4) return;
+  if(pad.msg){ pad.msg = ""; }       /* clear the error once they start again */
+  pad.entry += d;
+  tap(8);
+  padPaint();
+  if(pad.entry.length === 4) setTimeout(padSubmit, 160);
+}
+function padDelete(){
+  pad.entry = pad.entry.slice(0, -1);
+  tap(6);
+  padPaint();
+}
+function padSubmit(){
+  var entered = pad.entry, m = pad.member;
+
+  if(pad.stage === "create"){
+    pad.firstTry = entered;
+    pad.stage = "confirm";
+    pad.entry = "";
+    padPaint();
+    return;
+  }
+  if(pad.stage === "confirm"){
+    if(entered !== pad.firstTry){
+      pad.stage = "create";
+      pad.firstTry = "";
+      padShake("Those did not match. Start again.");
+      return;
+    }
+    setPin(m.id, entered).then(function(){
+      var done = pad.onDone;
+      padClose();
+      toast("PIN saved");
+      if(done) done();
+    });
+    return;
+  }
+  checkPin(m.id, entered).then(function(ok){
+    if(!ok){ padShake("Wrong PIN. Try again."); return; }
+    var done = pad.onDone;
+    padClose();
+    if(done) done();
+  });
+}
+
+/* Take over the app until the right PIN is entered. */
+function lockApp(){
+  var m = me();
+  el("app").classList.add("hide");
+  if(!hasPin(m.id)){
+    padOpen(m, "create", function(){ el("app").classList.remove("hide"); renderAll(); show("home"); });
+  } else {
+    padOpen(m, "enter", function(){ el("app").classList.remove("hide"); renderAll(); show("home"); });
+  }
+}
+
+/* Switching to another person needs that person's PIN on this device. */
+function switchTo(x){
+  if(x.id === S.cfg.me) return;
+  var go = function(){
+    S.cfg.me = x.id; save("cfg");
+    el("app").classList.remove("hide");
+    renderAll(); show("home");
+    toast("Switched to " + x.name);
+  };
+  el("app").classList.add("hide");
+  padOpen(x, hasPin(x.id) ? "enter" : "create", go);
+}
+
 /* =============== SCREEN: HOUSEHOLD =============== */
 function renderHome(){
   var root = el("s-home"); root.innerHTML = "";
@@ -345,8 +483,6 @@ function renderHome(){
     '<div class="top">' +
       '<span class="av lg" style="--ac:'+m.color+'">'+avatar(m.face)+'</span>' +
       '<div><div class="nm">'+esc(m.name)+'</div><div class="as">'+esc(assignName(m.id, today.getDay()))+'</div></div>' +
-      (S.cfg.mode === "none" ? "" :
-        '<div class="big"><b class="num">'+money(balanceOf(m.id))+'</b><small>Balance</small></div>') +
     '</div>' +
     '<div class="bar'+(p.pct===100?" good":"")+'"><i style="width:'+p.pct+'%"></i></div>' +
     '<div class="stats">' +
@@ -367,25 +503,13 @@ function renderHome(){
       '<span class="grow"><span class="t">'+esc(x.name)+'</span>' +
       '<span class="s">'+(xp.total ? xp.done+" of "+xp.total+" done" : "Nothing due today")+
         (streakOf(x.id) > 1 ? ' &middot; '+streakOf(x.id)+' day streak' : '')+'</span></span>' +
-      '<span class="rt">'+(S.cfg.mode==="none" ? xp.pct+"%" : '<span class="num">'+money(balanceOf(x.id))+'</span>')+
-        '<small>'+(xp.total-xp.done)+' due today</small></span>';
-    r.addEventListener("click", function(){
-      if(!isAdmin() && x.id !== S.cfg.me){ toast("Ask a parent to switch profiles"); return; }
-      S.cfg.me = x.id; save("cfg"); renderAll(); toast("Switched to " + x.name);
-    });
+      '<span class="rt">'+xp.pct+'%' +
+        (x.id === S.cfg.me ? '<small>You</small>' : '<small>Locked</small>')+'</span>';
+    r.addEventListener("click", function(){ switchTo(x); });
     g.appendChild(r);
   });
   sec.appendChild(g);
   root.appendChild(sec);
-
-  if(S.cfg.mode !== "none" && S.rewards.length){
-    var rs = h("div","sec");
-    rs.appendChild(h("div","cap","Working toward"));
-    var rg = h("div","group");
-    S.rewards.slice(0,2).forEach(function(rw){ rg.appendChild(rewardCard(rw)); });
-    rs.appendChild(rg);
-    root.appendChild(rs);
-  }
 
   var em = h("div","sec");
   var btn = h("button","btn", svg("mail") + "<span>Tell Dad I'm Done</span>");
@@ -483,7 +607,7 @@ function choreRow(c, m, ds, live){
     /* Let the tick finish drawing before the list re-renders under it. */
     setTimeout(function(){
       var justPlated = nowOn ? c.cat : null;
-      renderChores(justPlated); renderHome(); renderChart(); renderMoney(); headline(); syncPips();
+      renderChores(justPlated); renderHome(); renderChart(); headline(); syncPips();
       if(finished) showSeal(m);
     }, nowOn ? 260 : 0);
   }
@@ -491,12 +615,12 @@ function choreRow(c, m, ds, live){
   row.appendChild(chk);
   row.appendChild(h("span","tile sm", svg(c.icon)));
 
-  /* name .... price, the way a menu sets it */
+  /* name .... served, the way a menu sets a line */
   var mid = h("span","mid");
   var line = h("span","line",
     '<span class="t">' + esc(c.title) + '</span>' +
     '<span class="leader"></span>' +
-    (S.cfg.mode !== "none" ? '<span class="price">' + esc(money(c.value)) + '</span>' : ''));
+    '<span class="served">' + (on ? "Served" : "") + '</span>');
   mid.appendChild(line);
   if(bits.length) mid.appendChild(h("span","s", esc(bits.join(" \u00B7 "))));
   mid.style.cursor = "pointer";
@@ -530,7 +654,6 @@ function openDetail(c, m, ds){
       '<span class="tile" style="--tc:'+c.color+'">'+svg(c.icon)+'</span>' +
       '<div><div class="nm" style="font-size:17px">'+esc(c.title)+'</div>' +
       '<div class="as">'+esc(c.cat)+'</div></div>' +
-      (S.cfg.mode==="none" ? "" : '<div class="big"><b class="num" style="font-size:21px">'+money(c.value)+'</b><small>Worth</small></div>') +
       '</div>';
     body.appendChild(head);
 
@@ -680,63 +803,6 @@ function renderChart(){
   root.appendChild(wrap);
 }
 
-/* =============== SCREEN: BALANCES + REWARDS =============== */
-function renderMoney(){
-  var root = el("s-money"); root.innerHTML = "";
-  if(S.cfg.mode === "none"){
-    root.appendChild(h("div","group",'<div class="empty">Rewards are turned off.<br>Turn on allowance or points in Settings.</div>'));
-    return;
-  }
-
-  var sec = h("div","sec");
-  sec.appendChild(h("div","cap","Balances"));
-  var g = h("div","group");
-  S.members.forEach(function(x){
-    var r = h("button","row tap");
-    r.innerHTML =
-      '<span class="av" style="--ac:'+x.color+'">'+avatar(x.face)+'</span>' +
-      '<span class="grow"><span class="t">'+esc(x.name)+'</span></span>' +
-      '<span class="rt num">'+money(balanceOf(x.id))+'</span><span class="chev"></span>';
-    r.addEventListener("click", function(){ openLedger(x); });
-    g.appendChild(r);
-  });
-  sec.appendChild(g);
-  root.appendChild(sec);
-
-  var rs = h("div","sec");
-  var cap = h("div","cap","Rewards");
-  rs.appendChild(cap);
-  var rg = h("div","group");
-  if(!S.rewards.length) rg.appendChild(h("div","empty","No rewards yet."));
-  S.rewards.forEach(function(rw){ rg.appendChild(rewardCard(rw, true)); });
-  rs.appendChild(rg);
-  root.appendChild(rs);
-
-  if(isAdmin()){
-    var add = h("button","btn ghost", svg("gift") + "<span>Create a reward</span>");
-    add.addEventListener("click", function(){ openReward(null); });
-    root.appendChild(add);
-  }
-}
-function rewardCard(rw, editable){
-  var have = rw.who === "joint"
-    ? S.members.reduce(function(a,x){ return a + balanceOf(x.id); }, 0)
-    : balanceOf(rw.who);
-  var pct = rw.price > 0 ? Math.min(100, Math.round(have / rw.price * 100)) : 0;
-  var card = h("div","rw");
-  card.innerHTML =
-    '<div class="top"><span class="tile sm" style="--tc:#ffd28a">'+svg("gift")+'</span>' +
-    '<span class="t">'+esc(rw.title)+'</span><span class="p num">'+money(rw.price)+'</span></div>' +
-    '<div class="bar'+(pct>=100?" good":"")+'"><i style="width:'+pct+'%"></i></div>' +
-    '<div class="meta"><span>'+(rw.who==="joint" ? "Everyone together" : esc((memberById(rw.who)||{name:"?"}).name))+'</span>' +
-    '<span class="num">'+money(have)+' / '+money(rw.price)+(pct>=100?" -- ready!":"")+'</span></div>';
-  if(editable && isAdmin()){
-    card.style.cursor = "pointer";
-    card.addEventListener("click", function(){ openReward(rw); });
-  }
-  return card;
-}
-
 /* =============== SCREEN: SETTINGS =============== */
 function renderSettings(){
   var root = el("s-set"); root.innerHTML = "";
@@ -748,61 +814,89 @@ function renderSettings(){
     var r = h("button","row tap");
     r.innerHTML =
       '<span class="av" style="--ac:'+x.color+'">'+avatar(x.face)+'</span>' +
-      '<span class="grow"><span class="t">'+esc(x.name)+'</span><span class="s">Age '+x.age+'</span></span>' +
-      (S.cfg.me === x.id ? '<span class="chip ok">Using</span>' : '');
-    r.addEventListener("click", function(){ S.cfg.me = x.id; save("cfg"); renderAll(); });
+      '<span class="grow"><span class="t">'+esc(x.name)+'</span><span class="s">Age '+x.age+
+        (hasPin(x.id) ? ' &middot; PIN set' : ' &middot; no PIN yet')+'</span></span>' +
+      (S.cfg.me === x.id ? '<span class="chip ok">Using</span>' : '<span class="chev"></span>');
+    r.addEventListener("click", function(){ switchTo(x); });
     wg.appendChild(r);
   });
   who.appendChild(wg);
   root.appendChild(who);
 
+  /* ---- your own PIN ---- */
+  var mine = h("div","sec");
+  mine.appendChild(h("div","cap","Your PIN"));
+  var pg = h("div","group");
+  var myRow = h("div","row static");
+  myRow.innerHTML = '<span class="grow"><span class="t">' + esc(me().name) + '\u2019s PIN</span>' +
+    '<span class="s">' + (hasPin(me().id)
+      ? "Asked for every time the app opens"
+      : "Not set yet") + '</span></span>';
+  var changeBtn = h("button","mini acc", hasPin(me().id) ? "Change" : "Set PIN");
+  changeBtn.addEventListener("click", function(){
+    var m = me();
+    if(!hasPin(m.id)){ padOpen(m, "create", function(){ renderSettings(); }); return; }
+    /* prove the old one first, then pick a new one */
+    padOpen(m, "enter", function(){
+      padOpen(m, "create", function(){ renderSettings(); });
+    });
+  });
+  myRow.appendChild(changeBtn);
+  pg.appendChild(myRow);
+  mine.appendChild(pg);
+  mine.appendChild(h("div","empty",
+    "A PIN keeps a brother or sister out of your list. It is not a real password " +
+    "\u2014 anything saved in a browser can be got at by someone who really wants to."));
+  root.appendChild(mine);
+
+  /* ---- parent mode ---- */
   var mode = h("div","sec");
-  mode.appendChild(h("div","cap","Mode"));
+  mode.appendChild(h("div","cap","Parent mode"));
   var mg = h("div","group");
   var rr = h("div","row static");
-  rr.innerHTML = '<span class="grow"><span class="t">Parent mode</span><span class="s">Kid mode hides editing and balance changes</span></span>';
-  var tog = h("button","mini" + (isAdmin() ? " acc" : ""), isAdmin() ? "Parent" : "Kid");
+  rr.innerHTML = '<span class="grow"><span class="t">Parent mode</span>' +
+    '<span class="s">Lets you add and edit chores, and reset a forgotten PIN</span></span>';
+  var tog = h("button","mini" + (isAdmin() ? " acc" : ""), isAdmin() ? "On" : "Off");
   tog.addEventListener("click", function(){
     if(isAdmin()){ S.cfg.role = "kid"; save("cfg"); renderAll(); return; }
-    if(S.cfg.pin){ askPin(); return; }
+    if(S.cfg.parentPin){ askParentPin(); return; }
     S.cfg.role = "admin"; save("cfg"); renderAll();
   });
   rr.appendChild(tog);
   mg.appendChild(rr);
 
-  var pinRow = h("div","row static");
-  pinRow.innerHTML = '<span class="grow"><span class="t">Parent PIN</span><span class="s">'+(S.cfg.pin ? "Set -- kids can't switch back" : "Not set")+'</span></span>';
-  var pb = h("button","mini", S.cfg.pin ? "Change" : "Set PIN");
-  pb.addEventListener("click", function(){
+  var ppRow = h("div","row static");
+  ppRow.innerHTML = '<span class="grow"><span class="t">Parent PIN</span><span class="s">' +
+    (S.cfg.parentPin ? "Set" : "Not set \u2014 anyone can turn parent mode on") + '</span></span>';
+  var ppBtn = h("button","mini", S.cfg.parentPin ? "Change" : "Set");
+  ppBtn.addEventListener("click", function(){
     if(!isAdmin()){ toast("Parent mode only"); return; }
-    var v = prompt("Choose a 4-digit PIN (blank to remove):", "");
+    var v = prompt("Choose a 4-digit parent PIN (leave blank to remove):", "");
     if(v === null) return;
-    v = v.replace(/\D/g,"").slice(0,4);
-    S.cfg.pin = v; save("cfg"); renderSettings();
-    toast(v ? "PIN saved" : "PIN removed");
+    S.cfg.parentPin = v.replace(/\D/g,"").slice(0,4);
+    save("cfg"); renderSettings();
+    toast(S.cfg.parentPin ? "Parent PIN saved" : "Parent PIN removed");
   });
-  pinRow.appendChild(pb);
-  mg.appendChild(pinRow);
+  ppRow.appendChild(ppBtn);
+  mg.appendChild(ppRow);
+
+  if(isAdmin()){
+    S.members.forEach(function(x){
+      if(!hasPin(x.id)) return;
+      var rz = h("div","row static");
+      rz.innerHTML = '<span class="grow"><span class="t">Reset ' + esc(x.name) + '\u2019s PIN</span>' +
+        '<span class="s">Use this if they forget it</span></span>';
+      var rb = h("button","mini","Reset");
+      rb.addEventListener("click", function(){
+        if(!confirm("Clear " + x.name + "'s PIN? They will choose a new one next time.")) return;
+        clearPin(x.id); renderSettings(); toast(x.name + "'s PIN cleared");
+      });
+      rz.appendChild(rb);
+      mg.appendChild(rz);
+    });
+  }
   mode.appendChild(mg);
   root.appendChild(mode);
-
-  var rew = h("div","sec");
-  rew.appendChild(h("div","cap","Rewards"));
-  var rg2 = h("div","group");
-  var seg = h("div","seg");
-  seg.style.margin = "11px 13px";
-  [["allowance","Allowance"],["points","Points"],["none","No rewards"]].forEach(function(o){
-    var b = h("button", null, o[1]);
-    b.setAttribute("aria-pressed", String(S.cfg.mode === o[0]));
-    b.addEventListener("click", function(){
-      if(!isAdmin()){ toast("Parent mode only"); return; }
-      S.cfg.mode = o[0]; save("cfg"); renderAll();
-    });
-    seg.appendChild(b);
-  });
-  rg2.appendChild(seg);
-  rew.appendChild(rg2);
-  root.appendChild(rew);
 
   var mail = h("div","sec");
   mail.appendChild(h("div","cap","Dad's email"));
@@ -820,14 +914,14 @@ function renderSettings(){
   var d1 = h("button","btn ghost","Reset chores to the family poster");
   d1.addEventListener("click", function(){
     if(!isAdmin()){ toast("Parent mode only"); return; }
-    if(!confirm("Replace all chores with the original poster list? Check-offs and balances are kept.")) return;
+    if(!confirm("Replace all chores with the original poster list? Check-offs are kept.")) return;
     S.chores = seedChores(); save("chores"); renderAll(); toast("Chores restored");
   });
   var d2 = h("button","btn danger","Erase everything on this device");
   d2.addEventListener("click", function(){
     if(!isAdmin()){ toast("Parent mode only"); return; }
-    if(!confirm("Erase all chores, check-offs, balances and rewards on this device? This cannot be undone.")) return;
-    ["members","chores","done","bal","rewards","photos","streak","cfg"].forEach(function(k){ store.removeItem("cs2."+k); });
+    if(!confirm("Erase all chores, check-offs, streaks and PINs on this device? This cannot be undone.")) return;
+    ["members","chores","done","photos","streak","pins","cfg"].forEach(function(k){ store.removeItem("cs2."+k); });
     location.reload();
   });
   danger.appendChild(d1); danger.appendChild(d2);
@@ -835,10 +929,10 @@ function renderSettings(){
 
   root.appendChild(h("div","empty","Everything stays on this device. Nothing is uploaded."));
 }
-function askPin(){
+function askParentPin(){
   var v = prompt("Enter the parent PIN:", "");
   if(v === null) return;
-  if(v.replace(/\D/g,"") === S.cfg.pin){ S.cfg.role = "admin"; save("cfg"); renderAll(); toast("Parent mode on"); }
+  if(v.replace(/\D/g,"") === S.cfg.parentPin){ S.cfg.role = "admin"; save("cfg"); renderAll(); toast("Parent mode on"); }
   else toast("Wrong PIN");
 }
 
@@ -865,7 +959,7 @@ function openChore(chore){
   var isNew = !chore;
   var c = chore ? JSON.parse(JSON.stringify(chore)) : {
     id:"c"+Date.now(), title:"", icon:"star", color:SWATCH[4], cat:"Bedroom",
-    value:1, assign:[], notes:"", subs:[], proof:false
+    assign:[], notes:"", subs:[], proof:false
   };
 
   openSheet(isNew ? "New chore" : "Edit chore", function(body){
@@ -910,14 +1004,6 @@ function openChore(chore){
       sw.appendChild(b);
     });
     f4.appendChild(sw); body.appendChild(f4);
-
-    if(S.cfg.mode !== "none"){
-      var f5 = h("div","field",'<label>Worth '+(S.cfg.mode==="points"?"(points)":"("+S.cfg.cur+")")+'</label>');
-      var v = h("input","inp"); v.type = "number"; v.step = "0.25"; v.min = "0"; v.value = c.value;
-      v.setAttribute("inputmode","decimal");
-      v.addEventListener("input", function(){ c.value = parseFloat(v.value) || 0; });
-      f5.appendChild(v); body.appendChild(f5);
-    }
 
     var f6 = h("div","field",'<label>Who does it, and on which days</label>');
     var wg = h("div","group who");
@@ -1030,88 +1116,6 @@ function openChore(chore){
   });
 }
 
-/* == balance ledger == */
-function openLedger(m){
-  openSheet(m.name + "'s balance", function(body){
-    var head = h("div","me");
-    head.innerHTML = '<div class="top"><span class="av lg" style="--ac:'+m.color+'">'+avatar(m.face)+'</span>' +
-      '<div><div class="nm">'+esc(m.name)+'</div><div class="as">Current balance</div></div>' +
-      '<div class="big"><b class="num">'+money(balanceOf(m.id))+'</b></div></div>';
-    body.appendChild(head);
-
-    if(isAdmin()){
-      var adj = h("button","btn ghost","Make an adjustment");
-      adj.addEventListener("click", function(){
-        var raw = prompt("Amount to add (use a minus sign to take away):", "");
-        if(raw === null) return;
-        var amt = parseFloat(raw);
-        if(isNaN(amt) || !amt){ toast("Enter a number"); return; }
-        var why = prompt("What's it for?", amt > 0 ? "Bonus" : "Cash paid out") || "Adjustment";
-        credit(m.id, amt, why);
-        closeSheet(); renderAll(); toast("Balance updated");
-      });
-      body.appendChild(adj);
-    }
-
-    var hist = (S.bal[m.id] && S.bal[m.id].hist) || [];
-    var sec = h("div","sec");
-    sec.appendChild(h("div","cap","History"));
-    var g = h("div","group");
-    if(!hist.length) g.appendChild(h("div","empty","Nothing yet. Completed chores show up here."));
-    hist.slice(0,80).forEach(function(e){
-      var d = new Date(e.at);
-      var when = sameDay(d, today) ? "Today at " + d.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"})
-               : d.toLocaleDateString([], {month:"short", day:"numeric"}) + " at " + d.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"});
-      var row = h("div","led");
-      row.innerHTML = '<span class="grow"><span class="when">'+esc(when)+'</span><span class="what">'+esc(e.label)+'</span></span>' +
-        '<span class="amt"><b class="num '+(e.d>=0?"up":"dn")+'">'+(e.d>=0?"+":"")+money(e.d)+'</b><small class="num">'+money(e.after)+'</small></span>';
-      g.appendChild(row);
-    });
-    sec.appendChild(g);
-    body.appendChild(sec);
-  }, null);
-}
-
-/* == reward editor == */
-function openReward(rw){
-  var isNew = !rw;
-  var r = rw ? JSON.parse(JSON.stringify(rw)) : {id:"r"+Date.now(), title:"", price:20, who:"joint"};
-  openSheet(isNew ? "New reward" : "Edit reward", function(body){
-    var f1 = h("div","field",'<label>Reward</label>');
-    var t = h("input","inp"); t.value = r.title; t.placeholder = "Pizza night";
-    t.addEventListener("input", function(){ r.title = t.value; });
-    f1.appendChild(t); body.appendChild(f1);
-
-    var f2 = h("div","field",'<label>Costs</label>');
-    var p = h("input","inp"); p.type = "number"; p.min = "0"; p.step = "1"; p.value = r.price;
-    p.setAttribute("inputmode","decimal");
-    p.addEventListener("input", function(){ r.price = parseFloat(p.value) || 0; });
-    f2.appendChild(p); body.appendChild(f2);
-
-    var f3 = h("div","field","<label>Who it is for</label>");
-    var sel = h("select","inp");
-    sel.innerHTML = '<option value="joint">Everyone together</option>' +
-      S.members.map(function(m){ return '<option value="'+m.id+'">'+esc(m.name)+'</option>'; }).join("");
-    sel.value = r.who;
-    sel.addEventListener("change", function(){ r.who = sel.value; });
-    f3.appendChild(sel); body.appendChild(f3);
-
-    if(!isNew){
-      var del = h("button","btn danger","Delete this reward");
-      del.addEventListener("click", function(){
-        S.rewards = S.rewards.filter(function(x){ return x.id !== r.id; });
-        save("rewards"); closeSheet(); renderAll(); toast("Reward deleted");
-      });
-      body.appendChild(del);
-    }
-  }, function(){
-    if(!r.title.trim()){ toast("Give the reward a name"); return false; }
-    if(isNew) S.rewards.push(r);
-    else S.rewards = S.rewards.map(function(x){ return x.id === r.id ? r : x; });
-    save("rewards"); renderAll();
-    return true;
-  });
-}
 
 /* == photo proof == */
 function capturePhoto(cb){
@@ -1152,8 +1156,6 @@ function emailDad(){
 
   var when = today.toLocaleDateString(undefined, {month:"long", day:"numeric", year:"numeric"});
   var head = m.name + " finished every chore for " + DOWFULL[dow] + ", " + when + ".\n";
-  if(S.cfg.mode !== "none") head += "Earned today: " + money(list.reduce(function(a,c){ return a + c.value; }, 0)) +
-                                    "  -  Balance: " + money(balanceOf(m.id)) + "\n";
   var st = streakOf(m.id);
   if(st > 1) head += "Streak: " + st + " days in a row\n";
 
@@ -1184,7 +1186,6 @@ var TABS = [
   {id:"home",   label:"Household", icon:"home"},
   {id:"chores", label:"Chores",    icon:"list"},
   {id:"chart",  label:"Chart",     icon:"chart"},
-  {id:"money",  label:"Balances",  icon:"wallet"},
   {id:"set",    label:"Settings",  icon:"gear"}
 ];
 var current = "home";
@@ -1253,7 +1254,7 @@ function headline(){
 
 /* =============== BOOT =============== */
 function renderAll(){
-  renderHome(); renderChores(); renderChart(); renderMoney(); renderSettings();
+  renderHome(); renderChores(); renderChart(); renderSettings();
   buildCatList(); headline(); syncPips();
 }
 
@@ -1269,8 +1270,12 @@ function firstRun(){
       S.cfg.role = "kid";        /* a parent flips this on in Settings */
       save("cfg");
       el("welcome").classList.remove("on");
-      el("app").classList.remove("hide");
-      renderAll(); show("home");
+      document.body.style.overflow = "";
+      /* straight into choosing a PIN, before the app is ever shown */
+      padOpen(m, "create", function(){
+        el("app").classList.remove("hide");
+        renderAll(); show("home");
+      });
     });
     g.appendChild(b);
   });
@@ -1364,8 +1369,36 @@ function buildCatList(){
 
 buildTabs();
 buildCatList();
-if(!S.cfg.me){ firstRun(); }
-else { renderAll(); show(requestedTab() || "home"); }
+var wantedTab = requestedTab();
+if(!S.cfg.me){
+  firstRun();
+} else {
+  /* Render behind the lock so the app is ready the moment the PIN lands. */
+  renderAll();
+  el("app").classList.add("hide");
+  padOpen(me(), hasPin(me().id) ? "enter" : "create", function(){
+    el("app").classList.remove("hide");
+    renderAll(); show(wantedTab || "home");
+  });
+}
+
+el("lockSwitch").addEventListener("click", function(){
+  /* Bail out to the person picker if the wrong profile is loaded. */
+  padClose();
+  el("app").classList.add("hide");
+  firstRun();
+});
+el("lockDel").addEventListener("click", padDelete);
+for(var pk = 0; pk <= 9; pk++){
+  (function(d){
+    el("key" + d).addEventListener("click", function(){ padPress(String(d)); });
+  })(pk);
+}
+document.addEventListener("keydown", function(e){
+  if(!el("lock").classList.contains("on")) return;
+  if(/^[0-9]$/.test(e.key)) padPress(e.key);
+  else if(e.key === "Backspace") padDelete();
+});
 
 /* Hand off from the launch screen after the first paint. rAF is the nice path,
    but it never fires while the tab is hidden - so a timer races it and whichever

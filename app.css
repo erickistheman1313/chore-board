@@ -203,11 +203,14 @@ h1,h2,h3{margin:0;font-weight:400}
   opacity:1;transition:opacity .35s ease;
 }
 .row.done .line .leader{opacity:.25}
-.line .price{
-  flex:none;white-space:nowrap;font-family:var(--serif);
-  font-size:16px;color:var(--brass-text);letter-spacing:.02em;
+/* Where a menu would print a price, this prints whether it has been served. */
+.line .served{
+  flex:none;white-space:nowrap;
+  font-family:var(--sans);font-size:9px;font-weight:600;
+  letter-spacing:.2em;text-transform:uppercase;color:var(--brass-text);
+  opacity:0;transition:opacity .35s ease .1s;
 }
-.row.done .line .price{color:var(--text-3)}
+.row.done .line .served{opacity:1}
 
 /* =========== CHECK =========== */
 .chk{
@@ -553,6 +556,67 @@ select.inp{
   100%{transform:scale(1) rotate(-7deg);opacity:1}
 }
 @keyframes sealShow{0%{opacity:0}12%{opacity:1}72%{opacity:1}100%{opacity:0}}
+
+/* =========== LOCK SCREEN =========== */
+.lock{
+  position:fixed;inset:0;z-index:70;display:none;
+  background:var(--ink);color:var(--cream);
+  padding:calc(28px + env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom));
+  overflow-y:auto;
+}
+.lock::before{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(120% 70% at 50% -8%, rgba(217,184,105,.18), transparent 62%);
+}
+.lock.on{display:grid;place-items:center}
+.lockbox{
+  position:relative;width:100%;max-width:330px;
+  display:flex;flex-direction:column;align-items:center;gap:0;
+  animation:riseIn .42s cubic-bezier(.22,.75,.3,1) both;
+}
+.lockbox .av{border-color:var(--brass-lo)}
+.lockbox .who{
+  margin-top:14px;font-family:var(--sans);font-size:9.5px;font-weight:600;
+  letter-spacing:.28em;text-transform:uppercase;color:var(--brass-hi);
+}
+.lockbox h2{
+  margin-top:9px;font-family:var(--serif);font-size:26px;font-weight:400;text-align:center;
+}
+.lockbox .hint{
+  margin:0;min-height:34px;padding:0 6px;text-align:center;
+  font-family:var(--serif);font-style:italic;font-size:13.5px;
+  color:rgba(242,235,220,.62);line-height:1.45;
+}
+.dots{display:flex;gap:15px;margin:20px 0 12px}
+.dots i{
+  width:11px;height:11px;border-radius:50%;
+  border:1px solid var(--brass);background:transparent;
+  transition:background .18s ease, transform .18s ease;
+}
+.dots i.on{background:var(--brass-hi);border-color:var(--brass-hi);transform:scale(1.14)}
+.keys{display:grid;grid-template-columns:repeat(3,1fr);gap:13px;width:100%;margin-top:6px}
+.keys button{
+  aspect-ratio:1;max-height:70px;border:1px solid var(--brass-lo);border-radius:50%;
+  background:transparent;color:var(--cream);cursor:pointer;
+  font-family:var(--serif);font-size:25px;
+  display:grid;place-items:center;touch-action:manipulation;
+  transition:background .18s ease, color .18s ease, transform .12s ease;
+}
+.keys button:active{background:var(--brass);color:var(--ink);transform:scale(.93)}
+.keys button:focus-visible{outline:1px solid var(--brass-hi);outline-offset:3px}
+.keys #lockDel{font-family:var(--sans);font-size:19px;border-color:transparent}
+.lockbox .switch{
+  margin-top:22px;border:0;background:none;cursor:pointer;padding:10px;
+  font-family:var(--sans);font-size:9.5px;font-weight:600;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--brass);
+}
+.lockbox.shake{animation:shake .34s cubic-bezier(.36,.07,.19,.97)}
+@keyframes shake{
+  10%,90%{transform:translateX(-2px)}
+  20%,80%{transform:translateX(4px)}
+  30%,50%,70%{transform:translateX(-7px)}
+  40%,60%{transform:translateX(7px)}
+}
 
 /* =========== BOOT =========== */
 #boot{
