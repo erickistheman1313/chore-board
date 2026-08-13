@@ -1,5 +1,6 @@
 Add-Type -AssemblyName System.Drawing
 
+# Brass medallion on near-black, matching the menu identity.
 $out = Join-Path $PSScriptRoot "icons"
 New-Item -ItemType Directory -Force $out | Out-Null
 
@@ -17,68 +18,45 @@ function New-Icon([int]$size, [string]$path) {
   $bmp = New-Object System.Drawing.Bitmap($size, $size)
   $g = [System.Drawing.Graphics]::FromImage($bmp)
   $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-  $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
 
   $rect = New-Object System.Drawing.Rectangle(0, 0, $size, $size)
+  $bg = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 23, 20, 15))
+  $g.FillRectangle($bg, $rect)
 
-  # Cel sky: light blue up top falling to the poster's deeper blue
-  $sky = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
-    $rect,
-    [System.Drawing.Color]::FromArgb(255, 128, 206, 255),
-    [System.Drawing.Color]::FromArgb(255, 27, 106, 196),
-    [System.Drawing.Drawing2D.LinearGradientMode]::Vertical)
-  $g.FillRectangle($sky, $rect)
+  # candlelight pooling from the top-left
+  $glow = New-Object System.Drawing.Drawing2D.GraphicsPath
+  $glow.AddEllipse(-$size * 0.3, -$size * 0.45, $size * 1.5, $size * 1.4)
+  $pg = New-Object System.Drawing.Drawing2D.PathGradientBrush($glow)
+  $pg.CenterPoint = [System.Drawing.PointF]::new($size * 0.36, $size * 0.16)
+  $pg.CenterColor = [System.Drawing.Color]::FromArgb(58, 217, 184, 105)
+  $pg.SurroundColors = @([System.Drawing.Color]::FromArgb(0, 217, 184, 105))
+  $g.FillRectangle($pg, $rect)
 
-  # Radiating burst behind the star
-  $burst = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(46, 255, 255, 255))
-  for ($i = 0; $i -lt 12; $i++) {
-    $a = $i * 30 * [Math]::PI / 180
-    $w = $size * 0.085
-    $len = $size * 0.85
-    $p = @(
-      [System.Drawing.PointF]::new($size / 2, $size / 2),
-      [System.Drawing.PointF]::new($size / 2 + $len * [Math]::Cos($a - 0.06), $size / 2 + $len * [Math]::Sin($a - 0.06)),
-      [System.Drawing.PointF]::new($size / 2 + $len * [Math]::Cos($a + 0.06), $size / 2 + $len * [Math]::Sin($a + 0.06))
-    )
-    $g.FillPolygon($burst, $p)
-  }
+  $cx = $size / 2.0; $cy = $size / 2.0
 
-  # The star: gold fill, heavy ink outline, like the poster's stars
-  $star = New-StarPath ($size / 2) ($size * 0.5) ($size * 0.365) ($size * 0.152)
-  $goldRect = New-Object System.Drawing.Rectangle(0, [int]($size * 0.14), $size, [int]($size * 0.74))
+  # two concentric keylines, the second dashed, like a stamped seal
+  $penOuter = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(255, 168, 130, 58), [single]($size * 0.026))
+  $g.DrawEllipse($penOuter, $cx - $size * 0.40, $cy - $size * 0.40, $size * 0.80, $size * 0.80)
+  $penInner = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(255, 168, 130, 58), [single]($size * 0.016))
+  $penInner.DashStyle = [System.Drawing.Drawing2D.DashStyle]::Dash
+  $penInner.DashPattern = @([single]2.2, [single]3.0)
+  $g.DrawEllipse($penInner, $cx - $size * 0.325, $cy - $size * 0.325, $size * 0.65, $size * 0.65)
+
+  $star = New-StarPath $cx $cy ($size * 0.225) ($size * 0.094)
+  $goldRect = New-Object System.Drawing.Rectangle(0, [int]($cy - $size * 0.25), $size, [int]($size * 0.5))
   $gold = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
     $goldRect,
-    [System.Drawing.Color]::FromArgb(255, 255, 226, 120),
-    [System.Drawing.Color]::FromArgb(255, 240, 150, 20),
+    [System.Drawing.Color]::FromArgb(255, 232, 209, 148),
+    [System.Drawing.Color]::FromArgb(255, 143, 113, 40),
     [System.Drawing.Drawing2D.LinearGradientMode]::Vertical)
-  $ink = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(255, 20, 18, 42), [single]($size * 0.052))
-  $ink.LineJoin = [System.Drawing.Drawing2D.LineJoin]::Round
   $g.FillPolygon($gold, $star)
-  $g.DrawPolygon($ink, $star)
-
-  # Two small sparkles, the poster's shorthand for "shiny and done"
-  $sparkle = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(235, 255, 255, 255))
-  foreach ($s in @(@(0.185, 0.225, 0.062), @(0.842, 0.755, 0.045))) {
-    $sx = $size * $s[0]; $sy = $size * $s[1]; $sr = $size * $s[2]
-    $g.FillPolygon($sparkle, @(
-      [System.Drawing.PointF]::new($sx, $sy - $sr),
-      [System.Drawing.PointF]::new($sx + $sr * 0.26, $sy - $sr * 0.26),
-      [System.Drawing.PointF]::new($sx + $sr, $sy),
-      [System.Drawing.PointF]::new($sx + $sr * 0.26, $sy + $sr * 0.26),
-      [System.Drawing.PointF]::new($sx, $sy + $sr),
-      [System.Drawing.PointF]::new($sx - $sr * 0.26, $sy + $sr * 0.26),
-      [System.Drawing.PointF]::new($sx - $sr, $sy),
-      [System.Drawing.PointF]::new($sx - $sr * 0.26, $sy - $sr * 0.26)
-    ))
-  }
 
   $g.Dispose()
   $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
   $bmp.Dispose()
-  "  $path"
 }
 
 foreach ($s in 152, 167, 180, 192, 512, 1024) {
   New-Icon $s (Join-Path $out "icon-$s.png")
 }
-"done"
+"regenerated 6 icons"

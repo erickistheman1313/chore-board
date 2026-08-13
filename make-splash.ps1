@@ -30,36 +30,63 @@ foreach ($s in $sizes) {
   $g = [System.Drawing.Graphics]::FromImage($bmp)
   $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
 
-  # Same gradient as the in-app boot screen so the handoff is invisible.
+  # Matches the in-app boot screen exactly, so the handoff is invisible.
   $rect = New-Object System.Drawing.Rectangle(0, 0, $w, $h)
-  $bg = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
-    $rect,
-    [System.Drawing.Color]::FromArgb(255, 30, 75, 192),
-    [System.Drawing.Color]::FromArgb(255, 18, 42, 110),
-    [System.Drawing.Drawing2D.LinearGradientMode]::ForwardDiagonal)
+  $bg = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 23, 20, 15))
   $g.FillRectangle($bg, $rect)
 
   $cx = $w / 2.0; $cy = $h / 2.0
-  $r = [Math]::Min($w, $h) * 0.115
+  $r = [Math]::Min($w, $h) * 0.085
 
-  $star = New-StarPath $cx ($cy - $r * 0.3) $r ($r * 0.42)
-  $goldRect = New-Object System.Drawing.Rectangle(0, [int]($cy - $r * 1.4), $w, [int]($r * 2.4))
+  # candlelight pooling from above, as in the app header
+  $glow = New-Object System.Drawing.Drawing2D.GraphicsPath
+  $glow.AddEllipse($cx - $w * 0.9, $cy - $h * 0.62, $w * 1.8, $h * 0.9)
+  $pg = New-Object System.Drawing.Drawing2D.PathGradientBrush($glow)
+  $pg.CenterPoint = [System.Drawing.PointF]::new($cx, $cy - $h * 0.2)
+  $pg.CenterColor = [System.Drawing.Color]::FromArgb(46, 217, 184, 105)
+  $pg.SurroundColors = @([System.Drawing.Color]::FromArgb(0, 217, 184, 105))
+  $g.FillRectangle($pg, $rect)
+
+  # seal: solid keyline, dashed keyline, brass star
+  $penOuter = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(255, 168, 130, 58), [single]($r * 0.055))
+  $g.DrawEllipse($penOuter, $cx - $r, $cy - $r, $r * 2, $r * 2)
+  $penInner = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(255, 168, 130, 58), [single]($r * 0.04))
+  $penInner.DashStyle = [System.Drawing.Drawing2D.DashStyle]::Dash
+  $penInner.DashPattern = @([single]2.2, [single]3.0)
+  $g.DrawEllipse($penInner, $cx - $r * 0.81, $cy - $r * 0.81, $r * 1.62, $r * 1.62)
+
+  $star = New-StarPath $cx $cy ($r * 0.56) ($r * 0.235)
+  $goldRect = New-Object System.Drawing.Rectangle(0, [int]($cy - $r * 0.6), $w, [int]($r * 1.2))
   $gold = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
     $goldRect,
-    [System.Drawing.Color]::FromArgb(255, 255, 226, 120),
-    [System.Drawing.Color]::FromArgb(255, 240, 150, 20),
+    [System.Drawing.Color]::FromArgb(255, 232, 209, 148),
+    [System.Drawing.Color]::FromArgb(255, 143, 113, 40),
     [System.Drawing.Drawing2D.LinearGradientMode]::Vertical)
-  $ink = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(255, 20, 18, 42), [single]($r * 0.14))
-  $ink.LineJoin = [System.Drawing.Drawing2D.LineJoin]::Round
   $g.FillPolygon($gold, $star)
-  $g.DrawPolygon($ink, $star)
 
-  $fontSize = [single]([Math]::Min($w, $h) * 0.042)
-  $font = New-Object System.Drawing.Font("Segoe UI", $fontSize, [System.Drawing.FontStyle]::Bold)
   $fmt = New-Object System.Drawing.StringFormat
   $fmt.Alignment = [System.Drawing.StringAlignment]::Center
-  $white = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::White)
-  $g.DrawString("Family Chores", $font, $white, [single]$cx, [single]($cy + $r * 1.15), $fmt)
+  $cream = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 250, 245, 234))
+  $brass = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 168, 130, 58))
+
+  $nameFont = New-Object System.Drawing.Font("Georgia", [single]([Math]::Min($w, $h) * 0.036), [System.Drawing.FontStyle]::Regular)
+  $g.DrawString("Family Chores", $nameFont, $cream, [single]$cx, [single]($cy + $r * 1.5), $fmt)
+
+  # letterspaced small caps, drawn a glyph at a time since GDI+ has no tracking
+  $estFont = New-Object System.Drawing.Font("Segoe UI", [single]([Math]::Min($w, $h) * 0.0145), [System.Drawing.FontStyle]::Bold)
+  $est = "EST. 2026"
+  $track = [single]([Math]::Min($w, $h) * 0.011)
+  $widths = @(); $total = 0
+  foreach ($ch in $est.ToCharArray()) {
+    $cw = $g.MeasureString([string]$ch, $estFont).Width - 6
+    $widths += $cw; $total += $cw + $track
+  }
+  $x = $cx - ($total - $track) / 2
+  $y = $cy + $r * 1.5 + [Math]::Min($w, $h) * 0.062
+  for ($i = 0; $i -lt $est.Length; $i++) {
+    $g.DrawString([string]$est[$i], $estFont, $brass, [single]$x, [single]$y)
+    $x += $widths[$i] + $track
+  }
 
   $g.Dispose()
   $bmp.Save((Join-Path $out "splash-$w`x$h.png"), [System.Drawing.Imaging.ImageFormat]::Png)

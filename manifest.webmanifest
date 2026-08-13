@@ -8,8 +8,8 @@
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui", "browser"],
   "orientation": "portrait",
-  "background_color": "#1e4bc0",
-  "theme_color": "#173a95",
+  "background_color": "#17140f",
+  "theme_color": "#17140f",
   "categories": ["productivity", "lifestyle"],
   "launch_handler": { "client_mode": "focus-existing" },
   "icons": [

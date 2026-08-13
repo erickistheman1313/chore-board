@@ -307,6 +307,28 @@ function h(tag, cls, html){
   return n;
 }
 function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]; }); }
+/* Wax seal stamped over the screen when every chore for the day is done. */
+function showSeal(m){
+  var s = el("seal");
+  if(!s) return;
+  if(matchMedia("(prefers-reduced-motion: reduce)").matches){
+    toast(streakOf(m.id) > 1 ? streakOf(m.id) + " days in a row" : "Service complete");
+    return;
+  }
+  var st = streakOf(m.id);
+  s.innerHTML =
+    '<div class="disc"><div class="ring"></div><div>' +
+      '<span class="big">Service</span>' +
+      '<span class="big">Complete</span>' +
+      '<span class="sm">' + esc(m.name) + '</span>' +
+      (st > 1 ? '<span class="yr">' + st + ' days running</span>' : '') +
+    '</div></div>';
+  s.classList.remove("on");
+  void s.offsetWidth;
+  s.classList.add("on");
+  setTimeout(function(){ s.classList.remove("on"); s.innerHTML = ""; }, 2600);
+}
+
 var toastT;
 function toast(msg){
   var t = el("toast"); t.textContent = msg; t.classList.add("show");
@@ -381,7 +403,7 @@ function assignName(mid, dow){
 
 /* =============== SCREEN: CHORES =============== */
 var choreDow = today.getDay();
-function renderChores(){
+function renderChores(justPlated){
   var root = el("s-chores"); root.innerHTML = "";
   var m = me(), ds = dkey(shift(startOfWeek(today), choreDow));
   var viewingToday = choreDow === today.getDay();
@@ -412,11 +434,15 @@ function renderChores(){
   cats.forEach(function(cat){
     var items = byCat[cat];
     var dn = items.filter(function(c){ return isDone(ds, m.id, c.id); }).length;
+    var whole = dn === items.length;
     var sec = h("div","sec");
     var cap = h("div","cap");
-    cap.innerHTML = esc(cat) + '<span class="rt num">'+dn+'/'+items.length+'</span>';
+    cap.innerHTML = esc(cat) +
+      '<span class="rt">' + (whole ? "complete" : dn + " of " + items.length) + '</span>';
     sec.appendChild(cap);
     var g = h("div","group");
+    /* brass sweeps across only on the check-off that finished the course */
+    if(whole && justPlated === cat) g.classList.add("plated");
     items.forEach(function(c){ g.appendChild(choreRow(c, m, ds, viewingToday)); });
     sec.appendChild(g);
     root.appendChild(sec);
@@ -432,7 +458,7 @@ function choreRow(c, m, ds, live){
   var on = isDone(ds, m.id, c.id);
   var row = h("div","row" + (on ? " done" : ""));
   var subs = (c.subs && c.subs.length) ? c.subs.length + " steps" : "";
-  var bits = [c.notes, subs, S.cfg.mode!=="none" ? money(c.value) : ""].filter(Boolean);
+  var bits = [c.notes, subs].filter(Boolean);
 
   var chk = h("button","chk", TICK);
   chk.setAttribute("role","checkbox");
@@ -440,6 +466,11 @@ function choreRow(c, m, ds, live){
   chk.setAttribute("aria-label", (on?"Uncheck ":"Check off ") + c.title);
   chk.addEventListener("click", function(){
     var nowOn = !isDone(ds, m.id, c.id);
+    if(nowOn){                       /* ring ripples outward from the tap */
+      chk.classList.remove("ring");
+      void chk.offsetWidth;
+      chk.classList.add("ring");
+    }
     if(nowOn && c.proof){ capturePhoto(function(p){ commit(nowOn, p); }); return; }
     commit(nowOn, null);
   });
@@ -447,18 +478,30 @@ function choreRow(c, m, ds, live){
     setDone(ds, m.id, c, nowOn, photo);
     tap(nowOn ? 14 : 8);
     var p = progressFor(m.id, shift(startOfWeek(today), choreDow));
-    if(live && p.total > 0 && p.done === p.total){ bumpStreak(m.id); tap([16,60,16,60,32]); }
-    renderChores(); renderHome(); renderChart(); renderMoney(); headline(); syncPips();
-    if(live && p.total > 0 && p.done === p.total) toast("All done! " + (streakOf(m.id)>1 ? streakOf(m.id)+" days in a row" : "Go tell Dad"));
+    var finished = live && p.total > 0 && p.done === p.total;
+    if(finished){ bumpStreak(m.id); tap([16,60,16,60,32]); }
+    /* Let the tick finish drawing before the list re-renders under it. */
+    setTimeout(function(){
+      var justPlated = nowOn ? c.cat : null;
+      renderChores(justPlated); renderHome(); renderChart(); renderMoney(); headline(); syncPips();
+      if(finished) showSeal(m);
+    }, nowOn ? 260 : 0);
   }
 
   row.appendChild(chk);
   row.appendChild(h("span","tile sm", svg(c.icon)));
-  row.querySelector(".tile").style.setProperty("--tc", c.color);
-  var grow = h("span","grow", '<span class="t">'+esc(c.title)+'</span>' + (bits.length ? '<span class="s">'+esc(bits.join(" - "))+'</span>' : ''));
-  grow.style.cursor = "pointer";
-  grow.addEventListener("click", function(){ openDetail(c, m, ds); });
-  row.appendChild(grow);
+
+  /* name .... price, the way a menu sets it */
+  var mid = h("span","mid");
+  var line = h("span","line",
+    '<span class="t">' + esc(c.title) + '</span>' +
+    '<span class="leader"></span>' +
+    (S.cfg.mode !== "none" ? '<span class="price">' + esc(money(c.value)) + '</span>' : ''));
+  mid.appendChild(line);
+  if(bits.length) mid.appendChild(h("span","s", esc(bits.join(" \u00B7 "))));
+  mid.style.cursor = "pointer";
+  mid.addEventListener("click", function(){ openDetail(c, m, ds); });
+  row.appendChild(mid);
 
   var shot = S.photos[ds + "|" + doneKey(m.id, c.id)];
   if(shot){
@@ -1188,13 +1231,24 @@ function syncPips(){
 function headline(){
   var m = me(), p = progressFor(m.id, today);
   var t = TABS.filter(function(x){ return x.id === current; })[0];
-  el("hEyebrow").textContent = DOWFULL[today.getDay()] + " - " + today.toLocaleDateString(undefined,{month:"long", day:"numeric"});
-  el("hTitle").innerHTML = current === "home"
-    ? 'Hi, <span class="soft">' + esc(m.name) + '</span>'
-    : esc(t.label);
-  el("hSub").textContent = p.total
-    ? (p.done === p.total ? "Everything's done today " : p.done + " of " + p.total + " chores done today")
-    : "Nothing due today";
+  el("hEyebrow").textContent = DOWFULL[today.getDay()] + " \u00B7 " +
+    today.toLocaleDateString(undefined, {month:"long", day:"numeric"});
+
+  /* The board is set like a menu: a course title, then a line in italics. */
+  var TITLE = {
+    home:   'Today for <span class="soft">' + esc(m.name) + '</span>',
+    chores: 'The <span class="soft">Menu</span>',
+    chart:  'The <span class="soft">Week</span>',
+    money:  'The <span class="soft">Account</span>',
+    set:    'The <span class="soft">Arrangements</span>'
+  };
+  el("hTitle").innerHTML = TITLE[current] || esc(t.label);
+
+  el("hSub").textContent = !p.total
+    ? "Nothing served today"
+    : p.done === p.total
+      ? "Every course complete"
+      : p.done + " of " + p.total + " courses complete";
 }
 
 /* =============== BOOT =============== */
