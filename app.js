@@ -194,6 +194,7 @@ var S = {
   photos:  read("cs2.photos",  {}),
   streak:  read("cs2.streak",  {}),
   pins:    read("cs2.pins",    {}),
+  fails:   read("cs2.fails",   {}),
   cfg:     read("cs2.cfg",     {dad:"", role:"kid", me:null, parentPin:""})
 };
 function save(what){
@@ -203,6 +204,7 @@ function save(what){
   if(!what || what==="photos")  write("cs2.photos",  S.photos);
   if(!what || what==="streak")  write("cs2.streak",  S.streak);
   if(!what || what==="pins")    write("cs2.pins",    S.pins);
+  if(!what || what==="fails")   write("cs2.fails",   S.fails);
   if(!what || what==="cfg")     write("cs2.cfg",     S.cfg);
 }
 
@@ -268,6 +270,66 @@ function pinHash(mid, pin){
     return out;
   });
 }
+/* ---- lockout after repeated wrong guesses ----
+   Five wrong tries jams the pad for a minute. Every jam after that doubles,
+   so someone sitting there guessing walks it up into hours. A correct PIN, or
+   a parent reset, wipes the slate.
+   Honest limit: the deadline is a clock time held on this device, so anyone
+   who changes the device clock can skip the wait. Stopping that needs a
+   server, which this app deliberately does not have. */
+var FAIL_LIMIT = 5;
+var JAM_BASE = 60 * 1000;              /* first jam: one minute   */
+var JAM_CAP  = 24 * 60 * 60 * 1000;    /* never longer than a day */
+
+function failsFor(mid){
+  var f = S.fails[mid];
+  if(!f) f = S.fails[mid] = {n:0, strikes:0, until:0};
+  return f;
+}
+function jamLength(strikes){
+  return Math.min(JAM_BASE * Math.pow(2, Math.max(0, strikes - 1)), JAM_CAP);
+}
+function jamLeft(mid){
+  var f = failsFor(mid);
+  var left = f.until - Date.now();
+  return left > 0 ? left : 0;
+}
+function triesLeft(mid){
+  return Math.max(0, FAIL_LIMIT - failsFor(mid).n);
+}
+/* Returns ms of jam if this failure triggered one, else 0. */
+function registerFail(mid){
+  var f = failsFor(mid);
+  f.n++;
+  var jammed = 0;
+  if(f.n >= FAIL_LIMIT){
+    f.strikes++;
+    jammed = jamLength(f.strikes);
+    f.until = Date.now() + jammed;
+    f.n = 0;
+  }
+  save("fails");
+  return jammed;
+}
+function clearFails(mid){
+  delete S.fails[mid];
+  save("fails");
+}
+function humanJam(ms){
+  var s = Math.ceil(ms / 1000);
+  if(s < 60) return s + (s === 1 ? " second" : " seconds");
+  var m = Math.round(s / 60);
+  if(m < 60) return m + (m === 1 ? " minute" : " minutes");
+  var hrs = Math.floor(m / 60), rem = m % 60;
+  return hrs + (hrs === 1 ? " hour" : " hours") + (rem ? " " + rem + " min" : "");
+}
+function clockJam(ms){
+  var s = Math.max(0, Math.ceil(ms / 1000));
+  var hrs = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  var pad2 = function(v){ return String(v).padStart(2, "0"); };
+  return hrs > 0 ? hrs + ":" + pad2(m) + ":" + pad2(sec) : m + ":" + pad2(sec);
+}
+
 function hasPin(mid){ return !!S.pins[mid]; }
 function setPin(mid, pin){
   return pinHash(mid, pin).then(function(hash){
@@ -297,6 +359,34 @@ function bumpStreak(mid){
   S.streak[mid] = s;
   save("streak");
 }
+/* Walks back through the days this device has existed and totals up the record.
+   Past days are judged against the chore list as it stands now; the app does not
+   keep a history of assignments, so a big edit will re-colour old days. */
+function historyStats(mid){
+  var since = S.cfg.since || dkey(today);
+  var out = {done:0, month:0, best:0, run:0};
+  var run = 0;
+  var monthKey = dkey(today).slice(0, 7);
+  for(var i = 0; i < 400; i++){
+    var d = shift(today, -i);
+    var ds = dkey(d);
+    if(ds < since) break;
+    var p = progressFor(mid, d);
+    if(!p.total) continue;                       /* nothing was due; skip */
+    var complete = p.done === p.total;
+    if(complete){
+      out.done++;
+      if(ds.slice(0, 7) === monthKey) out.month++;
+      run++;
+      if(run > out.best) out.best = run;
+    } else if(i > 0){
+      run = 0;                                   /* today unfinished is not a break */
+    }
+  }
+  out.run = streakOf(mid);
+  return out;
+}
+
 function streakOf(mid){
   var s = S.streak[mid];
   if(!s) return 0;
@@ -340,6 +430,63 @@ function toast(msg){
   clearTimeout(toastT); toastT = setTimeout(function(){ t.classList.remove("show"); }, 2600);
 }
 
+/* =============== DEAD-CHANNEL STATIC =============== */
+/* Drawn into a deliberately tiny buffer and blown up with smoothing off: that
+   is both far cheaper than filling every real pixel and closer to how analogue
+   snow actually looked. Runs at ~24fps, and stops dead when the app is hidden
+   so it never chews battery in the background. */
+var snow = { raf:0, timer:0, roll:0, running:false };
+
+function staticStart(){
+  var cv = el("staticCv");
+  if(!cv || snow.running) return;
+  var ctx = cv.getContext("2d", {alpha:false});
+  var W = 128;
+  var H = Math.max(64, Math.round(W * (innerHeight / Math.max(1, innerWidth))));
+  cv.width = W; cv.height = H;
+  var frame = ctx.createImageData(W, H);
+  var data = frame.data;
+  var reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function paint(){
+    for(var i = 0; i < data.length; i += 4){
+      var v = (Math.random() * 255) | 0;
+      /* a faint warm bias keeps it from looking like clinical blue noise */
+      data[i] = v; data[i+1] = v; data[i+2] = (v * 0.94) | 0; data[i+3] = 255;
+    }
+    ctx.putImageData(frame, 0, 0);
+
+    /* the bright band that used to roll up a detuned picture */
+    snow.roll = (snow.roll + 1.7) % (H + 30);
+    var y = H - snow.roll;
+    var g = ctx.createLinearGradient(0, y - 14, 0, y + 14);
+    g.addColorStop(0,   "rgba(255,255,255,0)");
+    g.addColorStop(0.5, "rgba(255,255,255,0.16)");
+    g.addColorStop(1,   "rgba(255,255,255,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, y - 14, W, 28);
+
+    /* an occasional torn line, offset sideways */
+    if(Math.random() < 0.14){
+      var ty = (Math.random() * H) | 0, th = 1 + ((Math.random() * 3) | 0);
+      var slice = ctx.getImageData(0, ty, W, th);
+      ctx.putImageData(slice, ((Math.random() * 24) | 0) - 12, ty);
+    }
+  }
+
+  paint();
+  snow.running = true;
+  if(reduced) return;                    /* one still frame, no animation */
+  snow.timer = setInterval(function(){
+    if(document.hidden) return;
+    paint();
+  }, 42);
+}
+function staticStop(){
+  clearInterval(snow.timer);
+  snow.timer = 0; snow.running = false;
+}
+
 /* =============== LOCK SCREEN =============== */
 var pad = {
   entry: "",          /* digits typed so far */
@@ -356,11 +503,36 @@ function padOpen(member, stage, onDone){
   el("lock").classList.add("on");
   document.body.style.overflow = "hidden";
   padPaint();
+  if(jamLeft(member.id) > 0) jamShow(); else jamHide();
 }
 function padClose(){
   el("lock").classList.remove("on");
   document.body.style.overflow = "";
   pad.onDone = null;
+  jamHide();
+}
+
+/* ---- the jammed state: fancy off, snow on ---- */
+var jamTick = 0;
+function jamShow(){
+  var lock = el("lock");
+  lock.classList.add("jammed");
+  staticStart();
+  clearInterval(jamTick);
+  var paint = function(){
+    var left = jamLeft(pad.member.id);
+    if(left <= 0){ jamHide(); return; }
+    el("jamTime").textContent = clockJam(left);
+  };
+  paint();
+  jamTick = setInterval(paint, 250);
+}
+function jamHide(){
+  clearInterval(jamTick); jamTick = 0;
+  staticStop();
+  var lock = el("lock");
+  if(lock) lock.classList.remove("jammed");
+  if(pad.member && el("lock").classList.contains("on")) padPaint();
 }
 function padTitle(){
   if(pad.stage === "create")  return "Choose a PIN";
@@ -397,6 +569,7 @@ function padShake(msg){
   setTimeout(padPaint, 340);
 }
 function padPress(d){
+  if(jamLeft(pad.member.id) > 0) return;   /* keys are dead while jammed */
   if(pad.entry.length >= 4) return;
   if(pad.msg){ pad.msg = ""; }       /* clear the error once they start again */
   pad.entry += d;
@@ -405,6 +578,7 @@ function padPress(d){
   if(pad.entry.length === 4) setTimeout(padSubmit, 160);
 }
 function padDelete(){
+  if(jamLeft(pad.member.id) > 0) return;
   pad.entry = pad.entry.slice(0, -1);
   tap(6);
   padPaint();
@@ -435,10 +609,22 @@ function padSubmit(){
     return;
   }
   checkPin(m.id, entered).then(function(ok){
-    if(!ok){ padShake("Wrong PIN. Try again."); return; }
-    var done = pad.onDone;
-    padClose();
-    if(done) done();
+    if(ok){
+      clearFails(m.id);                    /* clean slate on the way in */
+      var done = pad.onDone;
+      padClose();
+      if(done) done();
+      return;
+    }
+    var jammed = registerFail(m.id);
+    if(jammed){
+      pad.entry = "";
+      tap([40, 80, 40, 80, 90]);
+      jamShow();
+      return;
+    }
+    var left = triesLeft(m.id);
+    padShake("Wrong PIN. " + left + (left === 1 ? " try" : " tries") + " left.");
   });
 }
 
@@ -484,6 +670,17 @@ function renderHome(){
       '<div class="stat"><b class="num">'+st+'</b><small>Day streak</small></div>' +
     '</div>';
   root.appendChild(card);
+
+  var hs = historyStats(m.id);
+  var rec = h("div","sec");
+  rec.appendChild(h("div","cap","The Record"));
+  var rg = h("div","group");
+  rg.appendChild(h("div","ledgerstats",
+    '<div class="lstat"><b class="num">'+hs.month+'</b><small>Full days this month</small></div>' +
+    '<div class="lstat"><b class="num">'+hs.best+'</b><small>Best run ever</small></div>' +
+    '<div class="lstat"><b class="num">'+hs.done+'</b><small>Full days all time</small></div>'));
+  rec.appendChild(rg);
+  root.appendChild(rec);
 
   var sec = h("div","sec");
   sec.appendChild(h("div","cap","Household"));
@@ -876,13 +1073,19 @@ function renderSettings(){
   if(isAdmin()){
     S.members.forEach(function(x){
       if(!hasPin(x.id)) return;
+      var jam = jamLeft(x.id);
       var rz = h("div","row static");
       rz.innerHTML = '<span class="grow"><span class="t">Reset ' + esc(x.name) + '\u2019s PIN</span>' +
-        '<span class="s">Use this if they forget it</span></span>';
+        '<span class="s">' + (jam > 0
+          ? "Locked out for another " + esc(humanJam(jam)) + " \u2014 this lifts it"
+          : "Use this if they forget it") + '</span></span>';
       var rb = h("button","mini","Reset");
       rb.addEventListener("click", function(){
         if(!confirm("Clear " + x.name + "'s PIN? They will choose a new one next time.")) return;
-        clearPin(x.id); renderSettings(); toast(x.name + "'s PIN cleared");
+        clearPin(x.id);
+        clearFails(x.id);      /* lift any lockout too, or they stay stuck out */
+        renderSettings();
+        toast(x.name + "'s PIN cleared");
       });
       rz.appendChild(rb);
       mg.appendChild(rz);
@@ -914,7 +1117,7 @@ function renderSettings(){
   d2.addEventListener("click", function(){
     if(!isAdmin()){ toast("Parent mode only"); return; }
     if(!confirm("Erase all chores, check-offs, streaks and PINs on this device? This cannot be undone.")) return;
-    ["members","chores","done","photos","streak","pins","cfg"].forEach(function(k){ store.removeItem("cs2."+k); });
+    ["members","chores","done","photos","streak","pins","fails","cfg"].forEach(function(k){ store.removeItem("cs2."+k); });
     location.reload();
   });
   danger.appendChild(d1); danger.appendChild(d2);
