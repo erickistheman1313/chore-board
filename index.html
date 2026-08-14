@@ -57,6 +57,23 @@
 </head>
 <body>
 
+<!-- One shared foil gradient. Defining it per medallion would repeat the same
+     id all over the document; every monogram references this instead. -->
+<svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
+  <defs>
+    <linearGradient id="foil" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0"    stop-color="#f0dcae"/>
+      <stop offset="0.34" stop-color="#d9b869"/>
+      <stop offset="0.62" stop-color="#a8823a"/>
+      <stop offset="1"    stop-color="#7d5f24"/>
+    </linearGradient>
+    <linearGradient id="foilFaint" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0"    stop-color="#d9b869" stop-opacity=".85"/>
+      <stop offset="1"    stop-color="#7d5f24" stop-opacity=".85"/>
+    </linearGradient>
+  </defs>
+</svg>
+
 <div id="boot" role="status" aria-label="Loading">
   <div class="mark">
     <svg viewBox="0 0 40 40" aria-hidden="true">

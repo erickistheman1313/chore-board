@@ -57,28 +57,21 @@ function svg(name, cls){
 var TICK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg>';
 var CROSS = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 
-/* =============== AVATARS =============== */
-var SKIN = "#f6cda6";
-function avatar(kind){
-  var ink = "#14122a";
-  if(kind === "isabel") return '<svg viewBox="0 0 64 64">'+
-    '<path d="M9 44c0-24 10-34 23-34s23 10 23 34v18H43c0-8-4-12-11-12s-11 4-11 12H9z" fill="#2b1d3f"/>'+
-    '<circle cx="32" cy="34" r="14" fill="'+SKIN+'"/>'+
-    '<path d="M18 30c1-13 7-18 14-18s13 5 14 18c-3-8-8-10-14-9s-11 4-14 9z" fill="#2b1d3f"/>'+
-    '<circle cx="26" cy="35" r="2.4" fill="'+ink+'"/><circle cx="38" cy="35" r="2.4" fill="'+ink+'"/>'+
-    '<path d="M28 42c2 2 6 2 8 0" stroke="'+ink+'" stroke-width="2" fill="none" stroke-linecap="round"/></svg>';
-  if(kind === "nuno") return '<svg viewBox="0 0 64 64">'+
-    '<path d="M32 4l6 11 7-8-1 12 11-5-8 10 12 2-11 6H15L4 26l12-2-8-10 11 5-1-12 7 8z" fill="#1d1630"/>'+
-    '<circle cx="32" cy="36" r="14" fill="'+SKIN+'"/>'+
-    '<path d="M18 32c2-10 7-14 14-14s12 4 14 14c-4-6-8-8-14-8s-10 2-14 8z" fill="#1d1630"/>'+
-    '<circle cx="26" cy="37" r="2.4" fill="'+ink+'"/><circle cx="38" cy="37" r="2.4" fill="'+ink+'"/>'+
-    '<path d="M27 44c3 2 7 2 10 0" stroke="'+ink+'" stroke-width="2" fill="none" stroke-linecap="round"/></svg>';
-  return '<svg viewBox="0 0 64 64">'+
-    '<path d="M32 10l5 9 6-6-1 10 9-4-6 8 9 2-9 5H19l-9-5 9-2-6-8 9 4-1-10 6 6z" fill="#17102a"/>'+
-    '<circle cx="32" cy="38" r="15" fill="'+SKIN+'"/>'+
-    '<path d="M17 35c2-9 7-13 15-13s13 4 15 13c-4-6-9-8-15-8s-11 2-15 8z" fill="#17102a"/>'+
-    '<circle cx="25" cy="39" r="2.7" fill="'+ink+'"/><circle cx="39" cy="39" r="2.7" fill="'+ink+'"/>'+
-    '<path d="M26 45c4 4 8 4 12 0" stroke="'+ink+'" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg>';
+/* =============== MONOGRAM MEDALLIONS =============== */
+/* An engraved brass disc with the person's initial, struck the same way as the
+   app icon: solid keyline, dashed keyline, foil letterform. Takes the member so
+   a renamed profile re-letters itself. */
+var SERIF_STACK = 'Didot,"Bodoni 72","Hoefler Text","Iowan Old Style",Palatino,Georgia,serif';
+function avatar(member){
+  var name = (member && member.name) || "?";
+  var initial = name.charAt(0).toUpperCase();
+  return '<svg viewBox="0 0 64 64" role="img" aria-label="' + esc(name) + '">' +
+    '<circle cx="32" cy="32" r="30.2" fill="none" stroke="url(#foil)" stroke-width="1.5"/>' +
+    '<circle cx="32" cy="32" r="26" fill="none" stroke="url(#foilFaint)" stroke-width="1" ' +
+      'stroke-dasharray="1.7 2.9" stroke-linecap="round"/>' +
+    '<text x="32" y="32" text-anchor="middle" dominant-baseline="central" ' +
+      'font-family=\'' + SERIF_STACK + '\' font-size="30" fill="url(#foil)">' + esc(initial) + '</text>' +
+    '</svg>';
 }
 
 /* =============== PALETTE =============== */
@@ -382,7 +375,7 @@ function padHint(){
 }
 function padPaint(){
   var m = pad.member;
-  el("lockAv").innerHTML = avatar(m.face);
+  el("lockAv").innerHTML = avatar(m);
   el("lockName").textContent = m.name;
   el("lockTitle").textContent = padTitle();
   el("lockHint").textContent = padHint();
@@ -481,7 +474,7 @@ function renderHome(){
   var card = h("div","me");
   card.innerHTML =
     '<div class="top">' +
-      '<span class="av lg" style="--ac:'+m.color+'">'+avatar(m.face)+'</span>' +
+      '<span class="av lg" style="--ac:'+m.color+'">'+avatar(m)+'</span>' +
       '<div><div class="nm">'+esc(m.name)+'</div><div class="as">'+esc(assignName(m.id, today.getDay()))+'</div></div>' +
     '</div>' +
     '<div class="bar'+(p.pct===100?" good":"")+'"><i style="width:'+p.pct+'%"></i></div>' +
@@ -499,7 +492,7 @@ function renderHome(){
     var xp = progressFor(x.id, today);
     var r = h("button","row tap");
     r.innerHTML =
-      '<span class="av" style="--ac:'+x.color+'">'+avatar(x.face)+'</span>' +
+      '<span class="av" style="--ac:'+x.color+'">'+avatar(x)+'</span>' +
       '<span class="grow"><span class="t">'+esc(x.name)+'</span>' +
       '<span class="s">'+(xp.total ? xp.done+" of "+xp.total+" done" : "Nothing due today")+
         (streakOf(x.id) > 1 ? ' &middot; '+streakOf(x.id)+' day streak' : '')+'</span></span>' +
@@ -712,7 +705,7 @@ function openDetail(c, m, ds){
     c.assign.forEach(function(a){
       var mm = memberById(a.m); if(!mm) return;
       var r = h("div","row static");
-      r.innerHTML = '<span class="av xs" style="--ac:'+mm.color+'">'+avatar(mm.face)+'</span>' +
+      r.innerHTML = '<span class="av xs" style="--ac:'+mm.color+'">'+avatar(mm)+'</span>' +
         '<span class="grow"><span class="t">'+esc(mm.name)+'</span>' +
         '<span class="s">'+a.days.map(function(d){ return DOW[d]; }).join(", ")+'</span></span>';
       wg.appendChild(r);
@@ -813,7 +806,7 @@ function renderSettings(){
   S.members.forEach(function(x){
     var r = h("button","row tap");
     r.innerHTML =
-      '<span class="av" style="--ac:'+x.color+'">'+avatar(x.face)+'</span>' +
+      '<span class="av" style="--ac:'+x.color+'">'+avatar(x)+'</span>' +
       '<span class="grow"><span class="t">'+esc(x.name)+'</span><span class="s">Age '+x.age+
         (hasPin(x.id) ? ' &middot; PIN set' : ' &middot; no PIN yet')+'</span></span>' +
       (S.cfg.me === x.id ? '<span class="chip ok">Using</span>' : '<span class="chev"></span>');
@@ -1013,7 +1006,7 @@ function openChore(chore){
       rowEl.style.flexWrap = "wrap";
       var head = h("div", null, "");
       head.style.cssText = "display:flex;align-items:center;gap:10px;width:100%";
-      head.innerHTML = '<span class="av xs" style="--ac:'+mm.color+'">'+avatar(mm.face)+'</span>' +
+      head.innerHTML = '<span class="av xs" style="--ac:'+mm.color+'">'+avatar(mm)+'</span>' +
                        '<span style="font-weight:600;font-size:15px">'+esc(mm.name)+'</span>';
       var onBtn = h("button","mini" + (days ? " acc" : ""), days ? "Assigned" : "Not assigned");
       onBtn.type = "button";
@@ -1263,7 +1256,7 @@ function firstRun(){
   g.innerHTML = "";
   S.members.forEach(function(m){
     var b = h("button","row tap");
-    b.innerHTML = '<span class="av lg" style="--ac:'+m.color+'">'+avatar(m.face)+'</span>' +
+    b.innerHTML = '<span class="av lg" style="--ac:'+m.color+'">'+avatar(m)+'</span>' +
       '<span class="grow"><span class="t" style="font-size:19px">'+esc(m.name)+'</span><span class="s">Age '+m.age+'</span></span><span class="chev"></span>';
     b.addEventListener("click", function(){
       S.cfg.me = m.id;
