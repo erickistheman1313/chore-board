@@ -652,6 +652,61 @@ select.inp{
 }
 @keyframes sealShow{0%{opacity:0}12%{opacity:1}72%{opacity:1}100%{opacity:0}}
 
+/* =========== PROFILE PICKER =========== */
+/* Same room as the lock screen so tapping a name feels like walking one step
+   further in, not jumping to a different app. */
+.pickscreen{
+  position:fixed;inset:0;z-index:72;display:none;
+  background:var(--ink);color:var(--cream);
+  padding:calc(30px + env(safe-area-inset-top)) 20px calc(26px + env(safe-area-inset-bottom));
+  overflow-y:auto;
+}
+.pickscreen::before{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(120% 70% at 50% -8%, rgba(217,184,105,.18), transparent 62%);
+}
+.pickscreen.on{display:grid;place-items:center}
+.pickbox{
+  position:relative;width:100%;max-width:360px;text-align:center;
+  animation:riseIn .45s cubic-bezier(.22,.75,.3,1) both;
+}
+.pick-eyebrow{
+  font-family:var(--sans);font-size:9.5px;font-weight:600;letter-spacing:.3em;
+  text-transform:uppercase;color:var(--brass-hi);
+}
+.pick-title{
+  margin-top:11px;font-family:var(--serif);font-size:34px;font-weight:400;
+  text-shadow:0 1px 1px rgba(0,0,0,.5);
+}
+.pickbox .fleuron{margin-top:14px;margin-bottom:26px}
+.pickwho{display:flex;flex-direction:column;gap:12px}
+.pickrow{
+  display:flex;align-items:center;gap:15px;width:100%;text-align:left;cursor:pointer;
+  background:rgba(255,255,255,.035);
+  border:1px solid var(--brass-lo);border-radius:var(--r);
+  padding:15px 17px;min-height:80px;color:var(--cream);
+  touch-action:manipulation;
+  transition:background .22s ease, border-color .22s ease, transform .12s ease;
+}
+.pickrow:active{background:rgba(217,184,105,.12);transform:scale(.985)}
+.pickrow:focus-visible{outline:1px solid var(--brass-hi);outline-offset:3px}
+.pickrow .av{width:52px;height:52px}
+.pickrow .nm{font-family:var(--serif);font-size:23px;line-height:1.1}
+.pickrow .st{
+  display:block;margin-top:5px;font-family:var(--sans);font-size:9px;font-weight:600;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--brass);
+}
+.pickrow .st.warn{color:#d0687c}
+.pickrow .go{
+  margin-left:auto;flex:none;width:8px;height:8px;
+  border-right:1px solid var(--brass);border-bottom:1px solid var(--brass);
+  transform:rotate(-45deg);
+}
+.pick-note{
+  margin:26px 0 0;font-family:var(--serif);font-style:italic;font-size:13.5px;
+  color:rgba(242,235,220,.6);
+}
+
 /* =========== LOCK SCREEN =========== */
 .lock{
   position:fixed;inset:0;z-index:70;display:none;
@@ -705,9 +760,15 @@ select.inp{
   font-family:var(--sans);font-size:9.5px;font-weight:600;letter-spacing:.18em;
   text-transform:uppercase;color:var(--brass);
 }
-/* ---- jammed: the fancy goes away and the channel dies ---- */
+/* ---- jammed: the fancy goes away and the channel dies ----
+   Every one of these carries the .jammed state in the selector. A bare
+   `.jam{display:none}` further up would lose to any later `.jam{display:...}`
+   at equal specificity, which is exactly how the panel once ended up sitting
+   on top of a perfectly working keypad. */
 .snow,.scanlines,.jam{display:none}
-.lock.jammed .snow,.lock.jammed .scanlines,.lock.jammed .jam{display:block}
+.lock.jammed .snow{display:block}
+.lock.jammed .scanlines{display:block}
+.lock.jammed .jam{display:grid}
 .lock.jammed .lockbox{display:none}
 .lock.jammed::before{display:none}          /* candlelight off with the picture */
 .lock.jammed{background:#000}
@@ -729,7 +790,8 @@ select.inp{
     rgba(0,0,0,.42) 0px, rgba(0,0,0,.42) 1px, transparent 1px, transparent 3px);
 }
 .jam{
-  position:absolute;inset:0;display:grid;place-items:center;
+  /* display lives only in the .jammed rules above -- do not set it here */
+  position:absolute;inset:0;place-items:center;
   padding:24px;text-align:center;pointer-events:none;
 }
 .jam-plate{
@@ -752,6 +814,17 @@ select.inp{
   margin-top:14px;font-family:var(--serif);font-style:italic;font-size:13.5px;
   line-height:1.5;color:rgba(255,255,255,.72);
 }
+/* One live control on a dead screen: the rest of .jam ignores taps, this does not,
+   so one person locking themselves out never strands everybody else. */
+.jam-switch{
+  margin-top:20px;pointer-events:auto;cursor:pointer;
+  background:none;border:1px solid rgba(232,209,148,.42);border-radius:var(--r);
+  padding:11px 16px;min-height:44px;color:#e8d194;
+  font-family:var(--sans);font-size:9px;font-weight:600;letter-spacing:.18em;
+  text-transform:uppercase;
+}
+.jam-switch:active{background:rgba(232,209,148,.15)}
+.jam-switch:focus-visible{outline:1px solid #e8d194;outline-offset:3px}
 
 .lockbox.shake{animation:shake .34s cubic-bezier(.36,.07,.19,.97)}
 @keyframes shake{

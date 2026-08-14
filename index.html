@@ -86,17 +86,14 @@
   </div>
 </div>
 
-<!-- first launch -->
-<div id="welcome" class="sheet" style="top:0;border-radius:0;max-height:100vh">
-  <div class="sbar" style="border-radius:0"><h2>Who's using this device?</h2></div>
-  <div class="body">
-    <p style="margin:0;color:var(--text-2);font-size:14.5px;text-align:center">
-      Pick your name, then choose a PIN. You'll only ever see your own chores.
-    </p>
-    <div class="group" id="pickWho"></div>
-    <p style="margin:0;color:var(--text-3);font-size:12.5px;text-align:center">
-      A parent can turn on Parent mode later in Settings to edit chores or reset a forgotten PIN.
-    </p>
+<!-- shown on every launch: pick a profile, then that person's PIN -->
+<div id="welcome" class="pickscreen" role="dialog" aria-modal="true" aria-label="Choose your profile">
+  <div class="pickbox">
+    <div class="pick-eyebrow">Family Chore Schedule</div>
+    <h2 class="pick-title">Who's here?</h2>
+    <div class="fleuron" aria-hidden="true"><i></i><b></b><i></i></div>
+    <div class="pickwho" id="pickWho"></div>
+    <p class="pick-note">Tap your name, then enter your PIN.</p>
   </div>
 </div>
 
@@ -152,6 +149,7 @@
       <div class="jam-label">No Signal</div>
       <div class="jam-time" id="jamTime">0:00</div>
       <div class="jam-sub">Too many wrong tries.<br>The pad comes back when the clock runs out.</div>
+      <button type="button" class="jam-switch" id="jamSwitch">Someone else? Switch person</button>
     </div>
   </div>
   <div class="lockbox" id="lockBox">

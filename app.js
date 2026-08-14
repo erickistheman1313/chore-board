@@ -639,17 +639,12 @@ function lockApp(){
   }
 }
 
-/* Switching to another person needs that person's PIN on this device. */
+/* Switching to another person goes through exactly the same gate as launching:
+   their PIN, or choosing one if this device has never seen them. */
 function switchTo(x){
   if(x.id === S.cfg.me) return;
-  var go = function(){
-    S.cfg.me = x.id; save("cfg");
-    el("app").classList.remove("hide");
-    renderAll(); show("home");
-    toast("Switched to " + x.name);
-  };
   el("app").classList.add("hide");
-  padOpen(x, hasPin(x.id) ? "enter" : "create", go);
+  enterAs(x);
 }
 
 /* =============== SCREEN: HOUSEHOLD =============== */
@@ -1011,9 +1006,8 @@ function renderSettings(){
     wg.appendChild(r);
   });
   who.appendChild(wg);
-  root.appendChild(who);
 
-  /* ---- your own PIN ---- */
+  /* ---- your own PIN: first thing in Settings, so it is easy to find ---- */
   var mine = h("div","sec");
   mine.appendChild(h("div","cap","Your PIN"));
   var pg = h("div","group");
@@ -1035,9 +1029,10 @@ function renderSettings(){
   pg.appendChild(myRow);
   mine.appendChild(pg);
   mine.appendChild(h("div","empty",
-    "A PIN keeps a brother or sister out of your list. It is not a real password " +
-    "\u2014 anything saved in a browser can be got at by someone who really wants to."));
+    "Five wrong tries locks the pad for a minute, and each lock after that lasts " +
+    "twice as long. It keeps a brother or sister out \u2014 it is not a real password."));
   root.appendChild(mine);
+  root.appendChild(who);
 
   /* ---- parent mode ---- */
   var mode = h("div","sec");
@@ -1454,29 +1449,53 @@ function renderAll(){
   buildCatList(); headline(); syncPips();
 }
 
-function firstRun(){
+/* The way in, every single launch: see the profiles, tap yours, enter your PIN.
+   Nobody lands inside somebody else's list by default. */
+function showPicker(){
   var g = el("pickWho");
   g.innerHTML = "";
   S.members.forEach(function(m){
-    var b = h("button","row tap");
-    b.innerHTML = '<span class="av lg" style="--ac:'+m.color+'">'+avatar(m)+'</span>' +
-      '<span class="grow"><span class="t" style="font-size:19px">'+esc(m.name)+'</span><span class="s">Age '+m.age+'</span></span><span class="chev"></span>';
-    b.addEventListener("click", function(){
-      S.cfg.me = m.id;
-      S.cfg.role = "kid";        /* a parent flips this on in Settings */
-      save("cfg");
-      el("welcome").classList.remove("on");
-      document.body.style.overflow = "";
-      /* straight into choosing a PIN, before the app is ever shown */
-      padOpen(m, "create", function(){
-        el("app").classList.remove("hide");
-        renderAll(); show("home");
-      });
-    });
+    var jam = jamLeft(m.id);
+    var status = jam > 0 ? "Locked " + humanJam(jam)
+               : hasPin(m.id) ? "PIN set"
+               : "Set a PIN";
+    var b = h("button", "pickrow");
+    b.type = "button";
+    b.innerHTML =
+      '<span class="av">' + avatar(m) + '</span>' +
+      '<span><span class="nm">' + esc(m.name) + '</span>' +
+      '<span class="st' + (jam > 0 ? " warn" : "") + '">' + esc(status) + '</span></span>' +
+      '<span class="go" aria-hidden="true"></span>';
+    b.addEventListener("click", function(){ enterAs(m); });
     g.appendChild(b);
   });
   el("welcome").classList.add("on");
   el("app").classList.add("hide");
+  document.body.style.overflow = "hidden";
+  tap(6);
+}
+function hidePicker(){
+  el("welcome").classList.remove("on");
+  document.body.style.overflow = "";
+}
+
+/* Tapping a name: prove the PIN (or choose one the first time), then go in. */
+function enterAs(m){
+  var first = !hasPin(m.id);
+  hidePicker();
+  padOpen(m, first ? "create" : "enter", function(){
+    S.cfg.me = m.id;
+    if(S.cfg.role !== "admin") S.cfg.role = "kid";
+    save("cfg");
+    el("app").classList.remove("hide");
+    renderAll();
+    show(requestedTab() || "home");
+    /* Say once, on the way in, where the PIN lives from now on. */
+    if(!S.cfg.pinTold){
+      S.cfg.pinTold = 1; save("cfg");
+      setTimeout(function(){ toast("Change your PIN any time in Settings"); }, 900);
+    }
+  });
 }
 
 el("sheetCancel").addEventListener("click", closeSheet);
@@ -1565,25 +1584,17 @@ function buildCatList(){
 
 buildTabs();
 buildCatList();
-var wantedTab = requestedTab();
-if(!S.cfg.me){
-  firstRun();
-} else {
-  /* Render behind the lock so the app is ready the moment the PIN lands. */
-  renderAll();
-  el("app").classList.add("hide");
-  padOpen(me(), hasPin(me().id) ? "enter" : "create", function(){
-    el("app").classList.remove("hide");
-    renderAll(); show(wantedTab || "home");
-  });
-}
+/* Render behind the picker so the app is ready the moment a PIN lands. */
+if(S.cfg.me) renderAll();
+showPicker();
 
-el("lockSwitch").addEventListener("click", function(){
-  /* Bail out to the person picker if the wrong profile is loaded. */
+function backToPicker(){
   padClose();
   el("app").classList.add("hide");
-  firstRun();
-});
+  showPicker();
+}
+el("lockSwitch").addEventListener("click", backToPicker);
+el("jamSwitch").addEventListener("click", backToPicker);
 el("lockDel").addEventListener("click", padDelete);
 for(var pk = 0; pk <= 9; pk++){
   (function(d){
