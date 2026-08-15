@@ -703,10 +703,16 @@ function renderHome(){
 
   var em = h("div","sec");
   var btn = h("button","btn", svg("mail") + "<span>Tell Dad I'm Done</span>");
+  btn.id = "sendBtn";
   btn.disabled = !(p.total > 0 && p.done === p.total);
   if(btn.disabled) btn.innerHTML = "<span>" + (p.total ? (p.total-p.done)+" chore"+(p.total-p.done===1?"":"s")+" left" : "Nothing due today") + "</span>";
   btn.addEventListener("click", emailDad);
   em.appendChild(btn);
+  if(!btn.disabled){
+    em.appendChild(h("div","sendnote", mailKey()
+      ? "Goes straight to Dad's inbox."
+      : "Opens your mail app. Add an email key in Settings to send it automatically."));
+  }
   root.appendChild(em);
 }
 function assignName(mid, dow){
@@ -1110,15 +1116,65 @@ function renderSettings(){
   mode.appendChild(mg);
   root.appendChild(mode);
 
+  /* ---- sending ---- */
   var mail = h("div","sec");
-  mail.appendChild(h("div","cap","Dad's email"));
-  var f = h("div","field");
+  mail.appendChild(h("div","cap","Sending"));
+
+  var f = h("div","field", "<label>Dad's email</label>");
   var inp = h("input","inp");
   inp.type = "email"; inp.placeholder = "dad@example.com"; inp.value = S.cfg.dad || "";
   inp.setAttribute("autocomplete","email");
-  inp.addEventListener("change", function(){ S.cfg.dad = inp.value.trim(); save("cfg"); });
+  inp.addEventListener("change", function(){ S.cfg.dad = inp.value.trim(); save("cfg"); renderHome(); });
   f.appendChild(inp);
   mail.appendChild(f);
+
+  var kf = h("div","field", "<label>Email key</label>");
+  var kin = h("input","inp");
+  kin.type = "text"; kin.placeholder = "paste the key from web3forms.com";
+  kin.value = S.cfg.mailKey || "";
+  kin.setAttribute("autocomplete","off");
+  kin.setAttribute("autocapitalize","off");
+  kin.setAttribute("spellcheck","false");
+  kin.addEventListener("change", function(){
+    S.cfg.mailKey = kin.value.trim(); save("cfg"); renderSettings(); renderHome();
+  });
+  kf.appendChild(kin);
+  mail.appendChild(kf);
+
+  var status = h("div","group");
+  var srow = h("div","row static");
+  srow.innerHTML = '<span class="grow"><span class="t">' +
+    (mailKey() ? "Sends on its own" : "Opens your mail app") + '</span>' +
+    '<span class="s">' + (mailKey()
+      ? "Tapping the button emails Dad straight away. The key decides where it lands, so it has to be made with his address."
+      : "Without a key the button hands the note to your mail app and you press send yourself.") +
+    '</span></span>';
+  status.appendChild(srow);
+  mail.appendChild(status);
+
+  if(mailKey()){
+    var testBtn = h("button","btn ghost","Send a test email");
+    testBtn.addEventListener("click", function(){
+      if(testBtn.disabled) return;
+      testBtn.disabled = true; testBtn.textContent = "Sending...";
+      postReport({
+        subject: "Test from the chore board",
+        body: "This is a test from " + me().name + "'s chore board.\n\n" +
+              "If this arrived, the button on the Household screen will reach you too."
+      }).then(function(){
+        testBtn.textContent = "Test sent";
+        toast("Test sent - check Dad's inbox");
+      }).catch(function(err){
+        testBtn.disabled = false; testBtn.textContent = "Send a test email";
+        toast("Failed: " + (err && err.message ? err.message : "no connection"));
+      });
+    });
+    mail.appendChild(testBtn);
+  }
+
+  mail.appendChild(h("div","empty",
+    "The key is free from web3forms.com. Put Dad's address in when you make it, " +
+    "then paste the key here on each phone. It is stored only on this device."));
   root.appendChild(mail);
 
   var danger = h("div","sec");
@@ -1353,13 +1409,11 @@ function capturePhoto(cb){
 }
 
 /* =============== EMAIL =============== */
-function emailDad(){
-  var m = me(), dow = today.getDay(), ds = dkey(today);
+/* Builds the note home. `brief` keeps it inside a mailto URL, which some mail
+   apps drop past ~2000 characters; the real send has no such limit. */
+function buildReport(brief){
+  var m = me(), dow = today.getDay();
   var list = choresFor(m.id, dow);
-  if(!list.length){ toast("Nothing due today"); return; }
-  var addr = (S.cfg.dad || "").trim();
-  if(!addr){ show("set"); toast("Add Dad's email in Settings first"); return; }
-
   var when = today.toLocaleDateString(undefined, {month:"long", day:"numeric", year:"numeric"});
   var head = m.name + " finished every chore for " + DOWFULL[dow] + ", " + when + ".\n";
   var st = streakOf(m.id);
@@ -1367,6 +1421,7 @@ function emailDad(){
 
   var cats = [], byCat = {};
   list.forEach(function(c){ if(!byCat[c.cat]){ byCat[c.cat]=[]; cats.push(c.cat); } byCat[c.cat].push(c); });
+
   var lines = [head];
   cats.forEach(function(cat){
     lines.push(cat.toUpperCase());
@@ -1374,17 +1429,85 @@ function emailDad(){
     lines.push("");
   });
   var body = lines.join("\n");
-  if(encodeURIComponent(body).length > 1750){
-    var brief = [head];
-    cats.forEach(function(cat){ brief.push("- " + cat + ": all " + byCat[cat].length + " done"); });
-    brief.push("", "Full checklist is in the app.");
-    body = brief.join("\n");
+
+  if(brief && encodeURIComponent(body).length > 1750){
+    var short = [head];
+    cats.forEach(function(cat){ short.push("- " + cat + ": all " + byCat[cat].length + " done"); });
+    short.push("", "Full checklist is in the app.");
+    body = short.join("\n");
   }
-  var subject = m.name + " finished all chores - " + DOWFULL[dow] + ", " +
-                today.toLocaleDateString(undefined, {month:"short", day:"numeric"});
+  return {
+    subject: m.name + " finished all chores - " + DOWFULL[dow] + ", " +
+             today.toLocaleDateString(undefined, {month:"short", day:"numeric"}),
+    body: body,
+    count: list.length
+  };
+}
+
+function mailKey(){ return (S.cfg.mailKey || "").trim(); }
+
+/* Hands the note to Web3Forms, which posts it on to whichever address the key
+   was created with. The key is typed into Settings rather than baked into the
+   source, so it never appears in the public repo and each device carries its own. */
+function postReport(report){
+  return fetch("https://api.web3forms.com/submit", {
+    method: "POST",
+    headers: {"Content-Type": "application/json", "Accept": "application/json"},
+    body: JSON.stringify({
+      access_key: mailKey(),
+      subject: report.subject,
+      from_name: "Family Chore Board",
+      replyto: (S.cfg.dad || "").trim() || undefined,
+      name: me().name,
+      message: report.body
+    })
+  }).then(function(res){
+    return res.json().catch(function(){ throw new Error("Mail service sent back something unreadable"); });
+  }).then(function(j){
+    if(!j || !j.success) throw new Error((j && j.message) || "The mail service refused it");
+    return j;
+  });
+}
+
+function mailtoFallback(report){
+  var addr = (S.cfg.dad || "").trim();
+  if(!addr){ show("set"); toast("Add Dad's email in Settings first"); return; }
   window.location.href = "mailto:" + encodeURIComponent(addr) +
-    "?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body);
-  toast("Opening your email app -- press send");
+    "?subject=" + encodeURIComponent(report.subject) + "&body=" + encodeURIComponent(report.body);
+  toast("Opening your mail app - press send");
+}
+
+var sending = false;
+function emailDad(){
+  if(sending) return;                       /* one tap, one email */
+  var m = me(), dow = today.getDay();
+  if(!choresFor(m.id, dow).length){ toast("Nothing due today"); return; }
+
+  /* No key set up yet, so fall back to handing it to the mail app. */
+  if(!mailKey()){ mailtoFallback(buildReport(true)); return; }
+
+  var btn = el("sendBtn");
+  var report = buildReport(false);
+  sending = true;
+  if(btn){ btn.disabled = true; btn.innerHTML = "<span>Sending...</span>"; }
+
+  postReport(report).then(function(){
+    sending = false;
+    if(btn){ btn.innerHTML = "<span>Sent to Dad</span>"; btn.classList.add("sent"); }
+    tap([14, 60, 14]);
+    toast("Sent to Dad");
+    S.cfg.lastSent = Date.now(); save("cfg");
+    setTimeout(renderHome, 2200);
+  }).catch(function(err){
+    sending = false;
+    if(btn){ btn.disabled = false; }
+    renderHome();
+    toast("Couldn't send: " + (err && err.message ? err.message : "no connection"));
+    /* Offer the old route rather than leaving them stuck. */
+    setTimeout(function(){
+      if(confirm("Couldn't send it automatically.\n\nOpen your mail app instead?")) mailtoFallback(buildReport(true));
+    }, 400);
+  });
 }
 
 /* =============== TABS =============== */
