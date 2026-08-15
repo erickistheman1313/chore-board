@@ -195,7 +195,7 @@ var S = {
   streak:  read("cs2.streak",  {}),
   pins:    read("cs2.pins",    {}),
   fails:   read("cs2.fails",   {}),
-  cfg:     read("cs2.cfg",     {dad:"", role:"kid", me:null})
+  cfg:     read("cs2.cfg",     {dad:"", role:"kid", me:null, sound:true})
 };
 function save(what){
   if(!what || what==="members") write("cs2.members", S.members);
@@ -702,13 +702,29 @@ function renderHome(){
   root.appendChild(sec);
 
   var em = h("div","sec");
+  var ready = p.total > 0 && p.done === p.total;
+
+  if(ready){
+    /* A line to go with the report - "sorry, the bin was already out" and such. */
+    var nf = h("div","field");
+    var note = h("textarea","inp");
+    note.id = "noteBox";
+    note.rows = 2;
+    note.placeholder = "Anything to tell Dad? (optional)";
+    note.value = noteDraft;
+    note.style.minHeight = "62px";
+    note.addEventListener("input", function(){ noteDraft = note.value; });
+    nf.appendChild(note);
+    em.appendChild(nf);
+  }
+
   var btn = h("button","btn", svg("mail") + "<span>Tell Dad I'm Done</span>");
   btn.id = "sendBtn";
-  btn.disabled = !(p.total > 0 && p.done === p.total);
+  btn.disabled = !ready;
   if(btn.disabled) btn.innerHTML = "<span>" + (p.total ? (p.total-p.done)+" chore"+(p.total-p.done===1?"":"s")+" left" : "Nothing due today") + "</span>";
   btn.addEventListener("click", emailDad);
   em.appendChild(btn);
-  if(!btn.disabled){
+  if(ready){
     em.appendChild(h("div","sendnote", mailKey()
       ? "Goes straight to Dad's inbox."
       : "Opens your mail app. Add an email key in Settings to send it automatically."));
@@ -797,9 +813,18 @@ function choreRow(c, m, ds, live){
   function commit(nowOn, photo){
     setDone(ds, m.id, c, nowOn, photo);
     tap(nowOn ? 14 : 8);
+    if(nowOn) soundTick(); else soundUntick();
+
     var p = progressFor(m.id, shift(startOfWeek(today), choreDow));
     var finished = live && p.total > 0 && p.done === p.total;
     if(finished){ bumpStreak(m.id); tap([16,60,16,60,32]); }
+
+    /* did this tick finish the course it belongs to? */
+    var mates = choresFor(m.id, choreDow).filter(function(x){ return x.cat === c.cat; });
+    var courseDone = nowOn && mates.every(function(x){ return isDone(ds, m.id, x.id); });
+    if(courseDone && !finished) setTimeout(soundCourse, 140);
+    if(finished) setTimeout(soundDone, 200);
+
     /* Let the tick finish drawing before the list re-renders under it. */
     setTimeout(function(){
       var justPlated = nowOn ? c.cat : null;
@@ -926,8 +951,25 @@ function openDetail(c, m, ds){
 
 /* =============== SCREEN: CHART =============== */
 var chartScope = "me";
+var chartView = "week";
+var monthCursor = null;        /* first of the month being looked at */
+
 function renderChart(){
   var root = el("s-chart"); root.innerHTML = "";
+
+  var vsec = h("div","sec");
+  var vseg = h("div","seg");
+  [["week","This week"],["month","By month"]].forEach(function(o){
+    var b = h("button", null, o[1]);
+    b.setAttribute("aria-pressed", String(chartView === o[0]));
+    b.addEventListener("click", function(){ chartView = o[0]; renderChart(); });
+    vseg.appendChild(b);
+  });
+  vsec.appendChild(vseg);
+  root.appendChild(vsec);
+
+  if(chartView === "month"){ renderMonth(root); return; }
+
   var sec = h("div","sec");
   var seg = h("div","seg");
   [["me","Just me"],["all","Everyone"]].forEach(function(o){
@@ -997,6 +1039,84 @@ function renderChart(){
     "<span><span class='mark no' style='width:15px;height:15px'>"+CROSS+"</span> Missed</span>" +
     "<span><i class='mark dot'></i> Not due</span>"));
   root.appendChild(wrap);
+}
+
+/* A month at a glance: one square per day, filled when everything was done,
+   ringed when some of it was, faint when nothing was ever due. */
+function renderMonth(root){
+  var m = me();
+  var cur = monthCursor || new Date(today.getFullYear(), today.getMonth(), 1);
+  monthCursor = cur;
+  var since = S.cfg.since || dkey(today);
+
+  var head = h("div","monthhead");
+  var prev = h("button","monthnav","\u2039");
+  prev.setAttribute("aria-label","Previous month");
+  prev.addEventListener("click", function(){
+    monthCursor = new Date(cur.getFullYear(), cur.getMonth() - 1, 1);
+    renderChart();
+  });
+  var next = h("button","monthnav","\u203A");
+  next.setAttribute("aria-label","Next month");
+  var atThisMonth = cur.getFullYear() === today.getFullYear() && cur.getMonth() === today.getMonth();
+  next.disabled = atThisMonth;
+  next.addEventListener("click", function(){
+    monthCursor = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+    renderChart();
+  });
+  head.appendChild(prev);
+  head.appendChild(h("div","monthname",
+    cur.toLocaleDateString(undefined, {month:"long", year:"numeric"})));
+  head.appendChild(next);
+  root.appendChild(head);
+
+  var wrap = h("div","chartwrap");
+  var grid = h("div","monthgrid");
+  ["S","M","T","W","T","F","S"].forEach(function(d, i){
+    grid.appendChild(h("div","monthdow", d));
+  });
+
+  var firstDow = new Date(cur.getFullYear(), cur.getMonth(), 1).getDay();
+  for(var b = 0; b < firstDow; b++) grid.appendChild(h("div","monthcell blank"));
+
+  var daysIn = new Date(cur.getFullYear(), cur.getMonth() + 1, 0).getDate();
+  var full = 0, partial = 0;
+  for(var d = 1; d <= daysIn; d++){
+    var date = new Date(cur.getFullYear(), cur.getMonth(), d);
+    var ds = dkey(date);
+    var cell = h("div","monthcell");
+    var label = h("span","mday", String(d));
+
+    if(ds > dkey(today) || ds < since){
+      cell.classList.add("out");                 /* future, or before the app existed */
+    } else {
+      var p = progressFor(m.id, date);
+      if(!p.total) cell.classList.add("none");
+      else if(p.done === p.total){ cell.classList.add("full"); full++; }
+      else if(p.done > 0){ cell.classList.add("part"); partial++; }
+      else cell.classList.add("miss");
+      cell.title = p.total ? p.done + " of " + p.total + " done" : "Nothing due";
+    }
+    if(sameDay(date, today)) cell.classList.add("today");
+    cell.appendChild(label);
+    grid.appendChild(cell);
+  }
+  wrap.appendChild(grid);
+  wrap.appendChild(h("div","legend",
+    "<span><i class='key full'></i> All done</span>" +
+    "<span><i class='key part'></i> Some done</span>" +
+    "<span><i class='key miss'></i> None</span>"));
+  root.appendChild(wrap);
+
+  var sum = h("div","sec");
+  sum.appendChild(h("div","cap", esc(m.name) + " this month"));
+  var sg = h("div","group");
+  sg.appendChild(h("div","ledgerstats",
+    '<div class="lstat"><b class="num">' + full + '</b><small>Full days</small></div>' +
+    '<div class="lstat"><b class="num">' + partial + '</b><small>Part days</small></div>' +
+    '<div class="lstat"><b class="num">' + streakOf(m.id) + '</b><small>Streak now</small></div>'));
+  sum.appendChild(sg);
+  root.appendChild(sum);
 }
 
 /* =============== SCREEN: SETTINGS =============== */
@@ -1176,6 +1296,60 @@ function renderSettings(){
     "The key is free from web3forms.com. Put Dad's address in when you make it, " +
     "then paste the key here on each phone. It is stored only on this device."));
   root.appendChild(mail);
+
+  /* ---- sound ---- */
+  var snd = h("div","sec");
+  snd.appendChild(h("div","cap","Sound"));
+  var sg = h("div","group");
+  var sRow = h("div","row static");
+  sRow.innerHTML = '<span class="grow"><span class="t">Chimes</span>' +
+    '<span class="s">A tick as you go, and a little fanfare when the day is finished</span></span>';
+  var sBtn = h("button","mini" + (S.cfg.sound ? " acc" : ""), S.cfg.sound ? "On" : "Off");
+  sBtn.addEventListener("click", function(){
+    S.cfg.sound = !S.cfg.sound; save("cfg");
+    if(S.cfg.sound) soundCourse();        /* let them hear what they just turned on */
+    renderSettings();
+  });
+  sRow.appendChild(sBtn);
+  sg.appendChild(sRow);
+  snd.appendChild(sg);
+  root.appendChild(snd);
+
+  /* ---- backup ---- */
+  var bk = h("div","sec");
+  bk.appendChild(h("div","cap","Backup"));
+  var bg = h("div","group");
+  var bRow = h("div","row static");
+  bRow.innerHTML = '<span class="grow"><span class="t">Save a copy</span>' +
+    '<span class="s">Everything is kept on this phone only. Clearing Safari\u2019s website data would wipe it.</span></span>';
+  bg.appendChild(bRow);
+  bk.appendChild(bg);
+
+  var saveBtn = h("button","btn ghost","Save a backup file");
+  saveBtn.addEventListener("click", downloadBackup);
+  bk.appendChild(saveBtn);
+
+  var copyBtn = h("button","mini","Copy backup as text");
+  copyBtn.style.cssText = "width:100%;min-height:44px";
+  copyBtn.addEventListener("click", copyBackup);
+  bk.appendChild(copyBtn);
+
+  var restoreBtn = h("button","btn ghost","Restore from a backup");
+  restoreBtn.addEventListener("click", function(){
+    if(!isAdmin()){ toast("Parent mode only"); return; }
+    restoreFromFile();
+  });
+  bk.appendChild(restoreBtn);
+
+  var pasteBtn = h("button","mini","Restore from pasted text");
+  pasteBtn.style.cssText = "width:100%;min-height:44px";
+  pasteBtn.addEventListener("click", function(){
+    if(!isAdmin()){ toast("Parent mode only"); return; }
+    var text = prompt("Paste the backup text here:", "");
+    if(text) finishRestore(text);
+  });
+  bk.appendChild(pasteBtn);
+  root.appendChild(bk);
 
   var danger = h("div","sec");
   danger.appendChild(h("div","cap","Data"));
@@ -1408,6 +1582,105 @@ function capturePhoto(cb){
   inp.click();
 }
 
+/* =============== BACKUP =============== */
+/* Everything lives in this browser, and clearing Safari's website data wipes it
+   without warning - streaks, history, the lot. This is the escape hatch. */
+var BACKUP_KEYS = ["members","chores","done","photos","streak","pins","fails","cfg"];
+
+function makeBackup(){
+  /* Members and chores sit in memory until something edits them, so flush
+     everything first - otherwise a backup taken before any edit would restore
+     without a chore list. */
+  save();
+  var bundle = {app:"family-chore-board", version:1, saved:new Date().toISOString(), data:{}};
+  BACKUP_KEYS.forEach(function(k){
+    var raw = store.getItem("cs2." + k);
+    if(raw !== null) bundle.data[k] = raw;      /* kept as strings; no re-parsing to corrupt */
+  });
+  return JSON.stringify(bundle);
+}
+
+function backupFilename(){
+  return "chore-board-" + dkey(new Date()) + ".json";
+}
+
+function downloadBackup(){
+  var text = makeBackup();
+  try{
+    var blob = new Blob([text], {type:"application/json"});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url; a.download = backupFilename();
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+    toast("Backup saved");
+  }catch(e){
+    toast("Couldn't save a file - use Copy instead");
+  }
+}
+
+function copyBackup(){
+  var text = makeBackup();
+  function fallback(){
+    var ta = document.createElement("textarea");
+    ta.value = text; ta.style.cssText = "position:fixed;top:-1000px";
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand("copy"); toast("Backup copied - paste it somewhere safe"); }
+    catch(e){ toast("Couldn't copy on this device"); }
+    document.body.removeChild(ta);
+  }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(function(){
+      toast("Backup copied - paste it somewhere safe");
+    }, fallback);
+  } else fallback();
+}
+
+/* Returns an error string, or null when the restore went through. */
+function applyBackup(text){
+  var bundle;
+  try{ bundle = JSON.parse(text); }
+  catch(e){ return "That is not a backup file."; }
+  if(!bundle || bundle.app !== "family-chore-board" || !bundle.data){
+    return "That file is not from this app.";
+  }
+  var keys = Object.keys(bundle.data);
+  if(!keys.length) return "That backup is empty.";
+
+  BACKUP_KEYS.forEach(function(k){ store.removeItem("cs2." + k); });
+  keys.forEach(function(k){
+    if(BACKUP_KEYS.indexOf(k) === -1) return;    /* ignore anything unexpected */
+    store.setItem("cs2." + k, bundle.data[k]);
+  });
+  return null;
+}
+
+function restoreFromFile(){
+  var inp = document.createElement("input");
+  inp.type = "file";
+  inp.accept = "application/json,.json";
+  inp.style.cssText = "position:fixed;left:-9999px";
+  document.body.appendChild(inp);
+  inp.addEventListener("change", function(){
+    var f = inp.files && inp.files[0];
+    document.body.removeChild(inp);
+    if(!f) return;
+    var fr = new FileReader();
+    fr.onload = function(){ finishRestore(String(fr.result)); };
+    fr.onerror = function(){ toast("Couldn't read that file"); };
+    fr.readAsText(f);
+  });
+  inp.click();
+}
+
+function finishRestore(text){
+  if(!confirm("Restoring replaces everything on this device - chores, check-offs, streaks and PINs.\n\nCarry on?")) return;
+  var err = applyBackup(text);
+  if(err){ toast(err); return; }
+  toast("Restored - reopening");
+  setTimeout(function(){ location.reload(); }, 700);
+}
+
 /* =============== EMAIL =============== */
 /* Builds the note home. `brief` keeps it inside a mailto URL, which some mail
    apps drop past ~2000 characters; the real send has no such limit. */
@@ -1423,6 +1696,8 @@ function buildReport(brief){
   list.forEach(function(c){ if(!byCat[c.cat]){ byCat[c.cat]=[]; cats.push(c.cat); } byCat[c.cat].push(c); });
 
   var lines = [head];
+  var note = (noteDraft || "").trim();
+  if(note) lines.push("A note from " + m.name + ":\n" + note + "\n");
   cats.forEach(function(cat){
     lines.push(cat.toUpperCase());
     byCat[cat].forEach(function(c){ lines.push("- " + c.title); });
@@ -1443,6 +1718,8 @@ function buildReport(brief){
     count: list.length
   };
 }
+
+var noteDraft = "";      /* the optional line to Dad, cleared once it is sent */
 
 function mailKey(){ return (S.cfg.mailKey || "").trim(); }
 
@@ -1496,6 +1773,7 @@ function emailDad(){
     if(btn){ btn.innerHTML = "<span>Sent to Dad</span>"; btn.classList.add("sent"); }
     tap([14, 60, 14]);
     toast("Sent to Dad");
+    noteDraft = "";                       /* it has gone; do not send it twice */
     S.cfg.lastSent = Date.now(); save("cfg");
     setTimeout(renderHome, 2200);
   }).catch(function(err){
@@ -1536,6 +1814,37 @@ function show(id){
    iOS Safari has no vibration API, so it is simply a no-op there. */
 function tap(ms){
   try{ if(navigator.vibrate) navigator.vibrate(ms || 10); }catch(e){}
+}
+
+/* =============== SOUND =============== */
+/* Synthesised rather than loaded: no audio files to download, works offline,
+   and iOS only lets audio start from a real tap, which a check-off always is. */
+var audioCtx = null;
+function tone(freq, dur, gain, type){
+  if(!S.cfg.sound) return;
+  try{
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC) return;
+    if(!audioCtx) audioCtx = new AC();
+    if(audioCtx.state === "suspended") audioCtx.resume();
+    var t = audioCtx.currentTime;
+    var o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = type || "sine";
+    o.frequency.setValueAtTime(freq, t);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gain || 0.05, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + (dur || 0.16));
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(t); o.stop(t + (dur || 0.16) + 0.03);
+  }catch(e){ /* silence is an acceptable failure */ }
+}
+function soundTick(){ tone(920, 0.10, 0.04); }
+function soundUntick(){ tone(420, 0.09, 0.03); }
+function soundCourse(){ tone(660, 0.13, 0.05); setTimeout(function(){ tone(990, 0.18, 0.05); }, 95); }
+function soundDone(){                       /* a small fanfare, C-E-G-C */
+  [523.25, 659.25, 783.99, 1046.5].forEach(function(f, i){
+    setTimeout(function(){ tone(f, 0.4, 0.06, "triangle"); }, i * 115);
+  });
 }
 function buildTabs(){
   var bar = el("tabs"); bar.innerHTML = "";
