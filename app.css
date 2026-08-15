@@ -932,3 +932,59 @@ select.inp{
 @media (prefers-reduced-motion: reduce){
   *{animation-duration:.001ms !important;animation-iteration-count:1 !important;transition-duration:.001ms !important}
 }
+
+/* =========== TABLETS =========== */
+/* A menu wants to stay a column rather than sprawl, but 640px stranded in the
+   middle of an iPad reads as a phone app that was never thought about. Widen
+   it, and stop the tab bar stretching each label across half a foot of glass. */
+/* Every iPad, portrait included, so a tab label never sits stranded in the
+   middle of a 200px-wide button. */
+@media (min-width:700px){
+  .tabs{justify-content:center}
+  .tabs button{max-width:168px}
+}
+/* Bigger slates get a wider column and a little more air. */
+@media (min-width:840px){
+  .wrap{max-width:780px}
+  .hdr .inner{max-width:780px}
+  .hdr{padding-top:calc(34px + env(safe-area-inset-top));padding-bottom:36px}
+  .screen{padding-top:32px;gap:36px}
+  .row{padding:18px 20px}
+  .row .t{font-size:19px}
+}
+
+/* =========== SHORT AND WIDE =========== */
+/* Phone held sideways. Stacked, the keypad ran a long way off the bottom of a
+   390px-tall window, so 7 8 9 0 simply could not be seen. Side by side it fits. */
+@media (max-height:560px) and (orientation:landscape){
+  .lockbox{
+    max-width:680px;
+    display:grid;
+    grid-template-columns:1fr 250px;
+    column-gap:34px;
+    align-content:center;
+  }
+  .lockbox .av{grid-column:1;grid-row:1;justify-self:center;width:46px;height:46px}
+  .lockbox .who{grid-column:1;grid-row:2;margin-top:9px;text-align:center}
+  .lockbox h2{grid-column:1;grid-row:3;margin-top:6px;font-size:22px}
+  .lockbox .dots{grid-column:1;grid-row:4;justify-self:center;margin:14px 0 8px}
+  .lockbox .hint{grid-column:1;grid-row:5;min-height:0}
+  .keys{grid-column:2;grid-row:1 / span 5;align-self:center;margin-top:0;gap:9px}
+  .keys button{max-height:52px;font-size:20px}
+  .lockbox .switch{grid-column:1 / -1;grid-row:6;margin-top:14px}
+
+  /* The three names read better as a row than a tall stack here. */
+  .pickbox{max-width:760px}
+  .pick-title{font-size:26px}
+  .pickbox .fleuron{margin:11px 0 16px}
+  .pickwho{flex-direction:row;gap:11px}
+  .pickrow{flex-direction:column;text-align:center;gap:9px;min-height:0;padding:15px 10px}
+  .pickrow .av{width:44px;height:44px}
+  .pickrow .nm{font-size:18px}
+  .pickrow .go{display:none}
+  .pick-note{margin-top:17px}
+
+  .jam-plate{padding:22px 26px}
+  .jam-time{font-size:38px}
+  .jam-plate .fleuron{margin:11px 0 13px}
+}
