@@ -435,63 +435,6 @@ function toast(msg){
   clearTimeout(toastT); toastT = setTimeout(function(){ t.classList.remove("show"); }, 2600);
 }
 
-/* =============== DEAD-CHANNEL STATIC =============== */
-/* Drawn into a deliberately tiny buffer and blown up with smoothing off: that
-   is both far cheaper than filling every real pixel and closer to how analogue
-   snow actually looked. Runs at ~24fps, and stops dead when the app is hidden
-   so it never chews battery in the background. */
-var snow = { raf:0, timer:0, roll:0, running:false };
-
-function staticStart(){
-  var cv = el("staticCv");
-  if(!cv || snow.running) return;
-  var ctx = cv.getContext("2d", {alpha:false});
-  var W = 128;
-  var H = Math.max(64, Math.round(W * (innerHeight / Math.max(1, innerWidth))));
-  cv.width = W; cv.height = H;
-  var frame = ctx.createImageData(W, H);
-  var data = frame.data;
-  var reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  function paint(){
-    for(var i = 0; i < data.length; i += 4){
-      var v = (Math.random() * 255) | 0;
-      /* a faint warm bias keeps it from looking like clinical blue noise */
-      data[i] = v; data[i+1] = v; data[i+2] = (v * 0.94) | 0; data[i+3] = 255;
-    }
-    ctx.putImageData(frame, 0, 0);
-
-    /* the bright band that used to roll up a detuned picture */
-    snow.roll = (snow.roll + 1.7) % (H + 30);
-    var y = H - snow.roll;
-    var g = ctx.createLinearGradient(0, y - 14, 0, y + 14);
-    g.addColorStop(0,   "rgba(255,255,255,0)");
-    g.addColorStop(0.5, "rgba(255,255,255,0.16)");
-    g.addColorStop(1,   "rgba(255,255,255,0)");
-    ctx.fillStyle = g;
-    ctx.fillRect(0, y - 14, W, 28);
-
-    /* an occasional torn line, offset sideways */
-    if(Math.random() < 0.14){
-      var ty = (Math.random() * H) | 0, th = 1 + ((Math.random() * 3) | 0);
-      var slice = ctx.getImageData(0, ty, W, th);
-      ctx.putImageData(slice, ((Math.random() * 24) | 0) - 12, ty);
-    }
-  }
-
-  paint();
-  snow.running = true;
-  if(reduced) return;                    /* one still frame, no animation */
-  snow.timer = setInterval(function(){
-    if(document.hidden) return;
-    paint();
-  }, 42);
-}
-function staticStop(){
-  clearInterval(snow.timer);
-  snow.timer = 0; snow.running = false;
-}
-
 /* =============== LOCK SCREEN =============== */
 var pad = {
   entry: "",          /* digits typed so far */
@@ -517,12 +460,11 @@ function padClose(){
   jamHide();
 }
 
-/* ---- the jammed state: fancy off, snow on ---- */
+/* ---- the jammed state: the keypad is put away until the clock runs out ---- */
 var jamTick = 0;
 function jamShow(){
   var lock = el("lock");
   lock.classList.add("jammed");
-  staticStart();
   clearInterval(jamTick);
   var paint = function(){
     var left = jamLeft(pad.member.id);
@@ -534,7 +476,6 @@ function jamShow(){
 }
 function jamHide(){
   clearInterval(jamTick); jamTick = 0;
-  staticStop();
   var lock = el("lock");
   if(lock) lock.classList.remove("jammed");
   if(pad.member && el("lock").classList.contains("on")) padPaint();

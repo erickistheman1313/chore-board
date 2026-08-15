@@ -813,71 +813,49 @@ select.inp{
   font-family:var(--sans);font-size:9.5px;font-weight:600;letter-spacing:.18em;
   text-transform:uppercase;color:var(--brass);
 }
-/* ---- jammed: the fancy goes away and the channel dies ----
-   Every one of these carries the .jammed state in the selector. A bare
-   `.jam{display:none}` further up would lose to any later `.jam{display:...}`
-   at equal specificity, which is exactly how the panel once ended up sitting
-   on top of a perfectly working keypad. */
-.snow,.scanlines,.jam{display:none}
-.lock.jammed .snow{display:block}
-.lock.jammed .scanlines{display:block}
+/* ---- jammed: the keypad is put away until the clock runs out ----
+   Display lives only in the .jammed rules, which win on specificity, so a later
+   `.jam{display:...}` at equal specificity can never switch the panel back on. */
+.jam{display:none}
 .lock.jammed .jam{display:grid}
 .lock.jammed .lockbox{display:none}
-.lock.jammed::before{display:none}          /* candlelight off with the picture */
-.lock.jammed{background:#000}
 
-.snow{
-  position:absolute;inset:0;width:100%;height:100%;
-  /* the buffer is tiny on purpose; keep the blocks crisp when it is blown up */
-  image-rendering:pixelated;image-rendering:-moz-crisp-edges;
-  opacity:.5;
-  animation:flicker 3.1s steps(1) infinite;
-}
-@keyframes flicker{
-  0%,100%{opacity:.5}  7%{opacity:.62} 8%{opacity:.44}
-  41%{opacity:.58} 42%{opacity:.47} 73%{opacity:.6} 74%{opacity:.5}
-}
-.scanlines{
-  position:absolute;inset:0;pointer-events:none;
-  background:repeating-linear-gradient(180deg,
-    rgba(0,0,0,.42) 0px, rgba(0,0,0,.42) 1px, transparent 1px, transparent 3px);
-}
 .jam{
-  /* display lives only in the .jammed rules above -- do not set it here */
+  /* display is set only by the .jammed rule above -- do not set it here */
   position:absolute;inset:0;place-items:center;
   padding:24px;text-align:center;pointer-events:none;
 }
 .jam-plate{
-  background:rgba(0,0,0,.62);
-  border:1px solid rgba(232,209,148,.32);
-  padding:26px 30px;max-width:330px;
-  box-shadow:0 0 44px rgba(0,0,0,.8);
+  background:rgba(255,255,255,.03);
+  border:1px solid var(--brass-lo);
+  border-radius:var(--r);
+  padding:30px 30px 26px;max-width:330px;
   animation:riseIn .5s cubic-bezier(.22,.75,.3,1) both;
 }
 .jam-label{
-  font-family:var(--sans);font-size:9.5px;font-weight:700;letter-spacing:.34em;
-  text-transform:uppercase;color:#e8d194;
+  font-family:var(--sans);font-size:9.5px;font-weight:600;letter-spacing:.34em;
+  text-transform:uppercase;color:var(--brass-hi);
 }
+.jam-plate .fleuron{margin:15px 0 18px}
 .jam-time{
-  margin-top:14px;font-family:ui-monospace,"SF Mono",Consolas,monospace;
-  font-size:46px;line-height:1;color:#fff;font-variant-numeric:tabular-nums;
-  text-shadow:0 0 18px rgba(255,255,255,.4), 2px 0 0 rgba(255,60,60,.42), -2px 0 0 rgba(60,180,255,.42);
+  font-family:var(--serif);font-size:46px;line-height:1;
+  color:var(--cream);font-variant-numeric:tabular-nums;letter-spacing:.02em;
 }
 .jam-sub{
-  margin-top:14px;font-family:var(--serif);font-style:italic;font-size:13.5px;
-  line-height:1.5;color:rgba(255,255,255,.72);
+  margin-top:16px;font-family:var(--serif);font-style:italic;font-size:13.5px;
+  line-height:1.55;color:rgba(242,235,220,.62);
 }
-/* One live control on a dead screen: the rest of .jam ignores taps, this does not,
-   so one person locking themselves out never strands everybody else. */
+/* The one live control here: the rest of .jam ignores taps, so a single person
+   locking themselves out never strands everybody else on the device. */
 .jam-switch{
-  margin-top:20px;pointer-events:auto;cursor:pointer;
-  background:none;border:1px solid rgba(232,209,148,.42);border-radius:var(--r);
-  padding:11px 16px;min-height:44px;color:#e8d194;
+  margin-top:22px;pointer-events:auto;cursor:pointer;
+  background:none;border:1px solid var(--brass-lo);border-radius:var(--r);
+  padding:12px 16px;min-height:44px;color:var(--brass-hi);
   font-family:var(--sans);font-size:9px;font-weight:600;letter-spacing:.18em;
   text-transform:uppercase;
 }
-.jam-switch:active{background:rgba(232,209,148,.15)}
-.jam-switch:focus-visible{outline:1px solid #e8d194;outline-offset:3px}
+.jam-switch:active{background:rgba(217,184,105,.14)}
+.jam-switch:focus-visible{outline:1px solid var(--brass-hi);outline-offset:3px}
 
 .lockbox.shake{animation:shake .34s cubic-bezier(.36,.07,.19,.97)}
 @keyframes shake{
