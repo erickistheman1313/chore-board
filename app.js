@@ -195,7 +195,7 @@ var S = {
   streak:  read("cs2.streak",  {}),
   pins:    read("cs2.pins",    {}),
   fails:   read("cs2.fails",   {}),
-  cfg:     read("cs2.cfg",     {dad:"", role:"kid", me:null, parentPin:""})
+  cfg:     read("cs2.cfg",     {dad:"", role:"kid", me:null})
 };
 function save(what){
   if(!what || what==="members") write("cs2.members", S.members);
@@ -329,6 +329,11 @@ function clockJam(ms){
   var pad2 = function(v){ return String(v).padStart(2, "0"); };
   return hrs > 0 ? hrs + ":" + pad2(m) + ":" + pad2(sec) : m + ":" + pad2(sec);
 }
+
+/* The parent is not a profile on the picker, just an id that owns a PIN, so it
+   reuses the same hashing, the same keypad and the same lockout as everyone. */
+var PARENT = {id:"__parent", name:"Parent", color:"#c9a44c"};
+function parentPinSet(){ return hasPin(PARENT.id); }
 
 function hasPin(mid){ return !!S.pins[mid]; }
 function setPin(mid, pin){
@@ -1034,33 +1039,49 @@ function renderSettings(){
   root.appendChild(mine);
   root.appendChild(who);
 
-  /* ---- parent mode ---- */
+  /* ---- parent mode ----
+     Editing is always behind a PIN. Whoever sets this up claims the parent PIN
+     first; after that nobody can add, edit or delete a chore without it, so a
+     brother or sister can only ever tick things off. */
   var mode = h("div","sec");
   mode.appendChild(h("div","cap","Parent mode"));
   var mg = h("div","group");
   var rr = h("div","row static");
   rr.innerHTML = '<span class="grow"><span class="t">Parent mode</span>' +
-    '<span class="s">Lets you add and edit chores, and reset a forgotten PIN</span></span>';
+    '<span class="s">' + (parentPinSet()
+      ? "Needs the parent PIN. Lets you add and edit chores, and reset a forgotten PIN."
+      : "Not claimed yet \u2014 turning it on will ask you to choose the parent PIN.") +
+    '</span></span>';
   var tog = h("button","mini" + (isAdmin() ? " acc" : ""), isAdmin() ? "On" : "Off");
   tog.addEventListener("click", function(){
-    if(isAdmin()){ S.cfg.role = "kid"; save("cfg"); renderAll(); return; }
-    if(S.cfg.parentPin){ askParentPin(); return; }
-    S.cfg.role = "admin"; save("cfg"); renderAll();
+    if(isAdmin()){
+      S.cfg.role = "kid"; save("cfg"); renderAll();
+      toast("Parent mode off");
+      return;
+    }
+    padOpen(PARENT, parentPinSet() ? "enter" : "create", function(){
+      S.cfg.role = "admin"; save("cfg"); renderAll(); show("set");
+      toast(parentPinSet() ? "Parent mode on" : "Parent PIN claimed");
+    });
   });
   rr.appendChild(tog);
   mg.appendChild(rr);
 
   var ppRow = h("div","row static");
   ppRow.innerHTML = '<span class="grow"><span class="t">Parent PIN</span><span class="s">' +
-    (S.cfg.parentPin ? "Set" : "Not set \u2014 anyone can turn parent mode on") + '</span></span>';
-  var ppBtn = h("button","mini", S.cfg.parentPin ? "Change" : "Set");
+    (parentPinSet()
+      ? "Set. Keep it to yourself \u2014 it is what stops the chore list being changed."
+      : "Not set yet") + '</span></span>';
+  var ppBtn = h("button","mini" + (parentPinSet() ? "" : " acc"), parentPinSet() ? "Change" : "Set");
   ppBtn.addEventListener("click", function(){
-    if(!isAdmin()){ toast("Parent mode only"); return; }
-    var v = prompt("Choose a 4-digit parent PIN (leave blank to remove):", "");
-    if(v === null) return;
-    S.cfg.parentPin = v.replace(/\D/g,"").slice(0,4);
-    save("cfg"); renderSettings();
-    toast(S.cfg.parentPin ? "Parent PIN saved" : "Parent PIN removed");
+    if(!parentPinSet()){
+      padOpen(PARENT, "create", function(){ renderSettings(); });
+      return;
+    }
+    /* prove the old parent PIN before choosing a new one */
+    padOpen(PARENT, "enter", function(){
+      padOpen(PARENT, "create", function(){ renderSettings(); });
+    });
   });
   ppRow.appendChild(ppBtn);
   mg.appendChild(ppRow);
@@ -1119,12 +1140,6 @@ function renderSettings(){
   root.appendChild(danger);
 
   root.appendChild(h("div","empty","Everything stays on this device. Nothing is uploaded."));
-}
-function askParentPin(){
-  var v = prompt("Enter the parent PIN:", "");
-  if(v === null) return;
-  if(v.replace(/\D/g,"") === S.cfg.parentPin){ S.cfg.role = "admin"; save("cfg"); renderAll(); toast("Parent mode on"); }
-  else toast("Wrong PIN");
 }
 
 /* =============== SHEETS =============== */
@@ -1581,6 +1596,12 @@ function buildCatList(){
   S.chores.forEach(function(c){ if(c.cat && !seen[c.cat]){ seen[c.cat] = 1; out.push(c.cat); } });
   dl.innerHTML = out.map(function(c){ return '<option value="' + esc(c) + '"></option>'; }).join("");
 }
+
+/* Parent mode never survives a restart. Leaving it latched on would mean a
+   sibling picking the phone up later inherits the ability to edit chores. */
+if(S.cfg.role === "admin"){ S.cfg.role = "kid"; }
+if("parentPin" in S.cfg){ delete S.cfg.parentPin; }   /* moved into S.pins */
+save("cfg");
 
 buildTabs();
 buildCatList();
