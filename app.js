@@ -195,6 +195,7 @@ var S = {
   streak:  read("cs2.streak",  {}),
   pins:    read("cs2.pins",    {}),
   fails:   read("cs2.fails",   {}),
+  excused: read("cs2.excused", {}),
   cfg:     read("cs2.cfg",     {dad:"", role:"kid", me:null, sound:true})
 };
 function save(what){
@@ -205,6 +206,7 @@ function save(what){
   if(!what || what==="streak")  write("cs2.streak",  S.streak);
   if(!what || what==="pins")    write("cs2.pins",    S.pins);
   if(!what || what==="fails")   write("cs2.fails",   S.fails);
+  if(!what || what==="excused") write("cs2.excused", S.excused);
   if(!what || what==="cfg")     write("cs2.cfg",     S.cfg);
 }
 
@@ -234,6 +236,22 @@ function doneKey(mid, cid){ return mid + "|" + cid; }
 function isDone(dateStr, mid, cid){
   var day = S.done[dateStr];
   return !!(day && day[doneKey(mid, cid)]);
+}
+
+/* ---- excused chores ----
+   "We ate out, no dishes tonight." Without this a chore nobody could do still
+   counts against the day and quietly kills a streak. Parent mode only, or a kid
+   would simply excuse the lot and score a hundred percent every night. */
+function excusedFor(dateStr, mid, cid){
+  var day = S.excused[dateStr];
+  return (day && day[doneKey(mid, cid)]) || null;
+}
+function setExcused(dateStr, mid, cid, why){
+  if(!S.excused[dateStr]) S.excused[dateStr] = {};
+  var k = doneKey(mid, cid);
+  if(why === null){ delete S.excused[dateStr][k]; }
+  else S.excused[dateStr][k] = {at: Date.now(), why: (why || "").trim()};
+  save("excused");
 }
 
 /* =============== COMPLETION =============== */
@@ -351,9 +369,14 @@ function clearPin(mid){ delete S.pins[mid]; save("pins"); }
 function progressFor(mid, date){
   var dow = date.getDay(), ds = dkey(date);
   var list = choresFor(mid, dow);
-  var done = 0;
-  for(var i=0;i<list.length;i++) if(isDone(ds, mid, list[i].id)) done++;
-  return {done:done, total:list.length, pct: list.length ? Math.round(done/list.length*100) : 0};
+  var done = 0, total = 0, off = 0;
+  for(var i=0;i<list.length;i++){
+    if(excusedFor(ds, mid, list[i].id)){ off++; continue; }   /* not counted at all */
+    total++;
+    if(isDone(ds, mid, list[i].id)) done++;
+  }
+  return {done:done, total:total, excused:off,
+          pct: total ? Math.round(done/total*100) : 0};
 }
 function bumpStreak(mid){
   var s = S.streak[mid] || {n:0, last:""};
@@ -710,12 +733,20 @@ function renderChores(justPlated){
 
   cats.forEach(function(cat){
     var items = byCat[cat];
-    var dn = items.filter(function(c){ return isDone(ds, m.id, c.id); }).length;
-    var whole = dn === items.length;
+    /* anything struck off tonight drops out of the count entirely */
+    var counted = items.filter(function(c){ return !excusedFor(ds, m.id, c.id); });
+    var dn = counted.filter(function(c){ return isDone(ds, m.id, c.id); }).length;
+    var whole = counted.length > 0 && dn === counted.length;
+    var offHere = items.length - counted.length;
     var sec = h("div","sec");
     var cap = h("div","cap");
     cap.innerHTML = esc(cat) +
-      '<span class="rt">' + (whole ? "complete" : dn + " of " + items.length) + '</span>';
+      '<span class="rt">' +
+        (counted.length === 0 ? "all off tonight"
+         : whole ? "complete"
+         : dn + " of " + counted.length) +
+        (offHere && counted.length ? " &middot; " + offHere + " off" : "") +
+      '</span>';
     sec.appendChild(cap);
     var g = h("div","group");
     /* brass sweeps across only on the check-off that finished the course */
@@ -733,9 +764,10 @@ function renderChores(justPlated){
 }
 function choreRow(c, m, ds, live){
   var on = isDone(ds, m.id, c.id);
-  var row = h("div","row" + (on ? " done" : ""));
+  var off = excusedFor(ds, m.id, c.id);
+  var row = h("div","row" + (on && !off ? " done" : ""));
   var subs = (c.subs && c.subs.length) ? c.subs.length + " steps" : "";
-  var bits = [c.notes, subs].filter(Boolean);
+  var bits = [off && off.why ? off.why : null, c.notes, subs].filter(Boolean);
 
   var chk = h("button","chk", TICK);
   chk.setAttribute("role","checkbox");
@@ -760,8 +792,10 @@ function choreRow(c, m, ds, live){
     var finished = live && p.total > 0 && p.done === p.total;
     if(finished){ bumpStreak(m.id); tap([16,60,16,60,32]); }
 
-    /* did this tick finish the course it belongs to? */
-    var mates = choresFor(m.id, choreDow).filter(function(x){ return x.cat === c.cat; });
+    /* did this tick finish the course it belongs to? excused ones do not count */
+    var mates = choresFor(m.id, choreDow).filter(function(x){
+      return x.cat === c.cat && !excusedFor(ds, m.id, x.id);
+    });
     var courseDone = nowOn && mates.every(function(x){ return isDone(ds, m.id, x.id); });
     if(courseDone && !finished) setTimeout(soundCourse, 140);
     if(finished) setTimeout(soundDone, 200);
@@ -774,7 +808,13 @@ function choreRow(c, m, ds, live){
     }, nowOn ? 260 : 0);
   }
 
-  row.appendChild(chk);
+  if(off){
+    /* struck off tonight: the check goes away entirely so it cannot be ticked */
+    row.classList.add("off");
+    row.appendChild(h("span","offmark", "\u2014"));
+  } else {
+    row.appendChild(chk);
+  }
   row.appendChild(h("span","tile sm", svg(c.icon)));
 
   /* name .... served, the way a menu sets a line */
@@ -782,7 +822,7 @@ function choreRow(c, m, ds, live){
   var line = h("span","line",
     '<span class="t">' + esc(c.title) + '</span>' +
     '<span class="leader"></span>' +
-    '<span class="served">' + (on ? "Served" : "") + '</span>');
+    '<span class="served">' + (off ? "Off tonight" : on ? "Served" : "") + '</span>');
   mid.appendChild(line);
   if(bits.length) mid.appendChild(h("span","s", esc(bits.join(" \u00B7 "))));
   mid.style.cursor = "pointer";
@@ -882,6 +922,39 @@ function openDetail(c, m, ds){
     who.appendChild(wg);
     body.appendChild(who);
 
+    /* Striking a chore off for one night. Parent mode only, on purpose. */
+    var off = excusedFor(ds, m.id, c.id);
+    var exSec = h("div","sec");
+    exSec.appendChild(h("div","cap","Tonight"));
+    var exg = h("div","group");
+    var exRow = h("div","row static");
+    exRow.innerHTML = '<span class="grow"><span class="t">' +
+      (off ? "Off tonight" : "Needed tonight") + '</span><span class="s">' +
+      (off
+        ? (off.why ? esc(off.why) : "Struck off, so it will not count against the day.")
+        : "Strike it off if it genuinely cannot be done, so it does not cost the streak.") +
+      '</span></span>';
+    if(isAdmin()){
+      var exBtn = h("button","mini" + (off ? " acc" : ""), off ? "Put back" : "Strike off");
+      exBtn.addEventListener("click", function(){
+        if(off){
+          setExcused(ds, m.id, c.id, null);
+          closeSheet(); renderAll(); toast("Back on the list");
+          return;
+        }
+        var why = prompt("Why is it off tonight? (optional)", "");
+        if(why === null) return;
+        setExcused(ds, m.id, c.id, why);
+        closeSheet(); renderAll(); toast("Struck off for tonight");
+      });
+      exRow.appendChild(exBtn);
+    }
+    exg.appendChild(exRow);
+    exSec.appendChild(exg);
+    if(!isAdmin()) exSec.appendChild(h("div","empty",
+      "Only a parent can strike a chore off, or everyone would strike off the lot."));
+    body.appendChild(exSec);
+
     if(isAdmin()){
       var ed = h("button","btn ghost","Edit this chore");
       ed.addEventListener("click", function(){ closeSheet(); setTimeout(function(){ openChore(c); }, 260); });
@@ -963,6 +1036,7 @@ function renderChart(){
          fresh install opens on a wall of red for days nobody could have used it. */
       var missable = d < today && !sameDay(d, today) && ds >= (S.cfg.since || "");
       if(!due) mark = "<i class='mark dot'></i>";
+      else if(excusedFor(ds, r.m.id, r.c.id)) mark = "<span class='mark skip'>&mdash;</span>";
       else if(isDone(ds, r.m.id, r.c.id)) mark = "<span class='mark ok'>"+TICK+"</span>";
       else if(missable) mark = "<span class='mark no'>"+CROSS+"</span>";
       else mark = "<i class='mark dot'></i>";
@@ -978,6 +1052,7 @@ function renderChart(){
   wrap.appendChild(h("div","legend",
     "<span><span class='mark ok' style='width:15px;height:15px'>"+TICK+"</span> Done</span>" +
     "<span><span class='mark no' style='width:15px;height:15px'>"+CROSS+"</span> Missed</span>" +
+    "<span><span class='mark skip'>&mdash;</span> Off</span>" +
     "<span><i class='mark dot'></i> Not due</span>"));
   root.appendChild(wrap);
 }
@@ -1068,16 +1143,28 @@ function renderSettings(){
   who.appendChild(h("div","cap","This device"));
   var wg = h("div","group");
   S.members.forEach(function(x){
-    var r = h("button","row tap");
-    r.innerHTML =
+    var r = h("div","row" + (S.cfg.me === x.id ? " static" : " tap"));
+    var main = h("button","rowmain");
+    main.innerHTML =
       '<span class="av" style="--ac:'+x.color+'">'+avatar(x)+'</span>' +
       '<span class="grow"><span class="t">'+esc(x.name)+'</span><span class="s">Age '+x.age+
         (hasPin(x.id) ? ' &middot; PIN set' : ' &middot; no PIN yet')+'</span></span>' +
       (S.cfg.me === x.id ? '<span class="chip ok">Using</span>' : '<span class="chev"></span>');
-    r.addEventListener("click", function(){ switchTo(x); });
+    main.addEventListener("click", function(){ switchTo(x); });
+    r.appendChild(main);
+    if(isAdmin()){
+      var ed = h("button","mini","Edit");
+      ed.addEventListener("click", function(e){ e.stopPropagation(); openMember(x); });
+      r.appendChild(ed);
+    }
     wg.appendChild(r);
   });
   who.appendChild(wg);
+  if(isAdmin()){
+    var addM = h("button","btn ghost", svg("plus") + "<span>Add someone</span>");
+    addM.addEventListener("click", function(){ openMember(null); });
+    who.appendChild(addM);
+  }
 
   /* ---- your own PIN: first thing in Settings, so it is easy to find ---- */
   var mine = h("div","sec");
@@ -1304,7 +1391,7 @@ function renderSettings(){
   d2.addEventListener("click", function(){
     if(!isAdmin()){ toast("Parent mode only"); return; }
     if(!confirm("Erase all chores, check-offs, streaks and PINs on this device? This cannot be undone.")) return;
-    ["members","chores","done","photos","streak","pins","fails","cfg"].forEach(function(k){ store.removeItem("cs2."+k); });
+    ["members","chores","done","photos","streak","pins","fails","excused","cfg"].forEach(function(k){ store.removeItem("cs2."+k); });
     location.reload();
   });
   danger.appendChild(d1); danger.appendChild(d2);
@@ -1472,6 +1559,18 @@ function openChore(chore){
     pr.appendChild(pb); f9.appendChild(pr); body.appendChild(f9);
 
     if(!isNew){
+      var dup = h("button","btn ghost","Duplicate this chore");
+      dup.addEventListener("click", function(){
+        var copy = JSON.parse(JSON.stringify(c));
+        copy.id = "c" + Date.now();
+        copy.title = c.title + " (copy)";
+        S.chores.push(copy);
+        save("chores"); closeSheet(); renderAll();
+        toast("Copied - edit the new one");
+        setTimeout(function(){ openChore(copy); }, 320);
+      });
+      body.appendChild(dup);
+
       var del = h("button","btn danger","Delete this chore");
       del.addEventListener("click", function(){
         if(!confirm("Delete \""+c.title+"\"? Past check-offs stay in the history.")) return;
@@ -1493,6 +1592,90 @@ function openChore(chore){
   });
 }
 
+
+/* == who is in the family == */
+function openMember(member){
+  var isNew = !member;
+  var m = member ? JSON.parse(JSON.stringify(member)) : {
+    id: "m" + Date.now(), name: "", age: 10, color: SWATCH[4]
+  };
+
+  openSheet(isNew ? "Add someone" : "Edit " + member.name, function(body){
+    var f1 = h("div","field","<label>Name</label>");
+    var t = h("input","inp");
+    t.value = m.name; t.placeholder = "Their name";
+    t.setAttribute("autocapitalize","words");
+    t.addEventListener("input", function(){ m.name = t.value; });
+    f1.appendChild(t); body.appendChild(f1);
+
+    var f2 = h("div","field","<label>Age</label>");
+    var a = h("input","inp");
+    a.type = "number"; a.min = "1"; a.max = "120"; a.value = m.age;
+    a.setAttribute("inputmode","numeric");
+    a.addEventListener("input", function(){ m.age = parseInt(a.value, 10) || 0; });
+    f2.appendChild(a); body.appendChild(f2);
+
+    var f3 = h("div","field","<label>Colour</label>");
+    var sw = h("div","swatches");
+    SWATCH.forEach(function(col){
+      var b = h("button","sw"); b.type = "button";
+      b.style.setProperty("--c", col);
+      b.setAttribute("aria-pressed", String(m.color === col));
+      b.setAttribute("aria-label","Colour " + col);
+      b.addEventListener("click", function(){
+        m.color = col;
+        sw.querySelectorAll(".sw").forEach(function(x){ x.setAttribute("aria-pressed","false"); });
+        b.setAttribute("aria-pressed","true");
+      });
+      sw.appendChild(b);
+    });
+    f3.appendChild(sw); body.appendChild(f3);
+
+    body.appendChild(h("div","empty",
+      "The medallion takes the first letter of the name, so renaming re-letters it."));
+
+    if(!isNew && S.members.length > 1){
+      var del = h("button","btn danger","Remove " + esc(member.name));
+      del.addEventListener("click", function(){
+        if(!confirm("Remove " + member.name + "?\n\nTheir PIN, streak and check-offs go too, and they come off every chore. This cannot be undone.")) return;
+        removeMember(member.id);
+        closeSheet(); renderAll();
+        toast(member.name + " removed");
+      });
+      body.appendChild(del);
+    }
+  }, function(){
+    if(!m.name.trim()){ toast("Give them a name"); return false; }
+    m.name = m.name.trim();
+    if(isNew){
+      S.members.push(m);
+    } else {
+      S.members = S.members.map(function(x){ return x.id === m.id ? m : x; });
+    }
+    save("members"); renderAll();
+    toast(isNew ? m.name + " added" : "Saved");
+    return true;
+  });
+}
+
+/* Pulls someone out cleanly: off every chore, and their own records with them. */
+function removeMember(id){
+  S.members = S.members.filter(function(x){ return x.id !== id; });
+  S.chores.forEach(function(c){
+    c.assign = c.assign.filter(function(a){ return a.m !== id; });
+  });
+  /* a chore nobody is assigned to would sit in the list doing nothing */
+  S.chores = S.chores.filter(function(c){ return c.assign.length; });
+  delete S.pins[id]; delete S.fails[id]; delete S.streak[id];
+  Object.keys(S.done).forEach(function(d){
+    Object.keys(S.done[d]).forEach(function(k){ if(k.indexOf(id + "|") === 0) delete S.done[d][k]; });
+  });
+  Object.keys(S.excused).forEach(function(d){
+    Object.keys(S.excused[d]).forEach(function(k){ if(k.indexOf(id + "|") === 0) delete S.excused[d][k]; });
+  });
+  if(S.cfg.me === id) S.cfg.me = S.members.length ? S.members[0].id : null;
+  save();
+}
 
 /* == photo proof == */
 function capturePhoto(cb){
@@ -1526,7 +1709,7 @@ function capturePhoto(cb){
 /* =============== BACKUP =============== */
 /* Everything lives in this browser, and clearing Safari's website data wipes it
    without warning - streaks, history, the lot. This is the escape hatch. */
-var BACKUP_KEYS = ["members","chores","done","photos","streak","pins","fails","cfg"];
+var BACKUP_KEYS = ["members","chores","done","photos","streak","pins","fails","excused","cfg"];
 
 function makeBackup(){
   /* Members and chores sit in memory until something edits them, so flush
@@ -1633,8 +1816,12 @@ function buildReport(brief){
   var st = streakOf(m.id);
   if(st > 1) head += "Streak: " + st + " days in a row\n";
 
+  var ds = dkey(today);
+  var offList = list.filter(function(c){ return excusedFor(ds, m.id, c.id); });
+  var doneList = list.filter(function(c){ return !excusedFor(ds, m.id, c.id); });
+
   var cats = [], byCat = {};
-  list.forEach(function(c){ if(!byCat[c.cat]){ byCat[c.cat]=[]; cats.push(c.cat); } byCat[c.cat].push(c); });
+  doneList.forEach(function(c){ if(!byCat[c.cat]){ byCat[c.cat]=[]; cats.push(c.cat); } byCat[c.cat].push(c); });
 
   var lines = [head];
   var note = (noteDraft || "").trim();
@@ -1644,6 +1831,15 @@ function buildReport(brief){
     byCat[cat].forEach(function(c){ lines.push("- " + c.title); });
     lines.push("");
   });
+  /* say plainly what was struck off, so it never looks like a quiet skip */
+  if(offList.length){
+    lines.push("OFF TONIGHT");
+    offList.forEach(function(c){
+      var why = excusedFor(ds, m.id, c.id);
+      lines.push("- " + c.title + (why && why.why ? " (" + why.why + ")" : ""));
+    });
+    lines.push("");
+  }
   var body = lines.join("\n");
 
   if(brief && encodeURIComponent(body).length > 1750){
